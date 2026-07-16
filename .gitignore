@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+*.key
+secrets/
+
+# Data / models / vectors
+data/
+*.pt
+*.bin
+*.safetensors
+checkpoints/
+adapters/
+qdrant_storage/
+neo4j_data/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Node (frontend)
+node_modules/
+.next/
+frontend/out/
