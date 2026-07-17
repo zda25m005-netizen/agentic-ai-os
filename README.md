@@ -1,5 +1,7 @@
 # Enterprise Agentic AI OS
 
+![CI](https://github.com/zda25m005-netizen/agentic-ai-os/actions/workflows/ci.yml/badge.svg)
+
 > A production-grade, multi-agent AI platform that reasons, plans, and executes complex tasks over enterprise data — with retrieval, tool use, long-term memory, and a real evaluation harness.
 
 **Status:** 🚧 In active development (Day 1). Building in public — one commit a day.
