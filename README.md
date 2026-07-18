@@ -4,7 +4,7 @@
 
 > A production-grade, multi-agent AI platform that reasons, plans, and executes complex tasks over enterprise data — with retrieval, tool use, long-term memory, and a real evaluation harness.
 
-**Status:** 🚧 In active development (Day 1). Building in public — one commit a day.
+**Status:** 🚧 In active development. Building in public — one commit a day.
 
 ---
 
@@ -12,23 +12,25 @@
 
 Most "AI agent" portfolios wire tutorials together and can't prove anything works. This one is built around **measurement**: every capability ships with an automated evaluation and real numbers (task success rate, latency, cost per task, citation accuracy).
 
-## Planned architecture (high level)
+## Architecture
 
-```
-User → API (FastAPI) → Planner Agent
-                          │
-        ┌─────────────────┼─────────────────┐
-     Research          Coding            Data/SQL
-      Agent             Agent             Agent
-        └─────────────────┼─────────────────┘
-                     Tool Layer (web, python, sql, files)
-                          │
-              RAG (hybrid search + citations)  ·  Memory (vector + history)  ·  Knowledge Graph
-                          │
-                     Critic / Reviewer  → retry or finish
+```mermaid
+flowchart TB
+    UI["Client (Next.js)"] -->|HTTP / SSE| API["FastAPI"]
+    API --> PL["Planner Agent"]
+    PL --> AG["Research · Coding · SQL · Browser agents"]
+    AG --> TL["Tool Layer: web · python · sql · files"]
+    AG --> RAG["RAG (hybrid + citations)"]
+    AG --> KG["Knowledge Graph (Neo4j)"]
+    PL --> MEM["Memory (vector + history)"]
+    RAG --> VDB[("Qdrant")]
+    MEM --> PG[("Postgres")]
+    AG --> CR["Critic / Reviewer"]
+    CR -->|approved| API
+    CR -.->|retry| PL
 ```
 
-Full design in [`docs/DESIGN.md`](docs/DESIGN.md).
+Full diagrams (request lifecycle, evaluation loop) in [docs/architecture.md](docs/architecture.md) · design & trade-offs in [docs/DESIGN.md](docs/DESIGN.md).
 
 ## Tech stack
 
@@ -54,19 +56,27 @@ Full design in [`docs/DESIGN.md`](docs/DESIGN.md).
 | p95 latency | — | — |
 | Cost / task | — | — |
 
+## API (current)
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/health` | Liveness probe |
+| GET | `/config` | Non-secret runtime config |
+| POST | `/chat` | Single-turn chat with the configured LLM |
+
 ## Quickstart
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/zda25m005-netizen/agentic-ai-os.git
 cd agentic-ai-os
-cp .env.example .env        # add your API keys
+cp .env.example .env
 make install
-make run                    # starts FastAPI on :8000
+make run
 ```
 
 ## Roadmap
 
-See [`docs/DESIGN.md`](docs/DESIGN.md). Built over ~4 months, daily commits.
+See [docs/DESIGN.md](docs/DESIGN.md). Built over ~4 months, daily commits.
 
 ## License
 
