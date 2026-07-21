@@ -81,3 +81,15 @@ See [docs/DESIGN.md](docs/DESIGN.md). Built over ~4 months, daily commits.
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## Ingestion
+
+Load PDFs, Word, PowerPoint, and Excel into the vector store:
+
+```bash
+docker compose up -d qdrant            # start Qdrant
+python -m app.rag.cli ingest report.pdf ./docs --collection kb
+```
+
+Pipeline: `load → chunk (recursive, overlap) → embed → store (Qdrant)`.
+Each chunk keeps its source filename and type for citations.
