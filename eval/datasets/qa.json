@@ -1,0 +1,17 @@
+[
+  {"id": "q1", "question": "How much did Acme Corp's Q3 revenue grow year over year?", "expected_answer": "12%", "expected_source": "q3_report.pdf"},
+  {"id": "q2", "question": "Which region led Acme Corp's revenue growth in Q3?", "expected_answer": "APAC", "expected_source": "q3_report.pdf"},
+  {"id": "q3", "question": "Where was product SKU-4471 shipped?", "expected_answer": "The Berlin warehouse", "expected_source": "q3_report.pdf"},
+  {"id": "q4", "question": "How many days of paid annual leave are employees entitled to?", "expected_answer": "25 days", "expected_source": "hr_policy.docx"},
+  {"id": "q5", "question": "How many days per week is remote work permitted?", "expected_answer": "Up to 3 days per week", "expected_source": "hr_policy.docx"},
+  {"id": "q6", "question": "How long is the probation period for new hires?", "expected_answer": "6 months", "expected_source": "hr_policy.docx"},
+  {"id": "q7", "question": "What authentication is required for API access?", "expected_answer": "JWT authentication", "expected_source": "security.md"},
+  {"id": "q8", "question": "What is the minimum password length?", "expected_answer": "12 characters", "expected_source": "security.md"},
+  {"id": "q9", "question": "How is data encrypted at rest?", "expected_answer": "AES-256", "expected_source": "security.md"},
+  {"id": "q10", "question": "What is the operating temperature range of the X1 sensor?", "expected_answer": "-40 to 85 degrees Celsius", "expected_source": "product_specs.xlsx"},
+  {"id": "q11", "question": "What is the battery life of the X1 sensor?", "expected_answer": "18 months", "expected_source": "product_specs.xlsx"},
+  {"id": "q12", "question": "What is the wireless transmission range of the X1 sensor?", "expected_answer": "100 meters", "expected_source": "product_specs.xlsx"},
+  {"id": "q13", "question": "How long is the engineer onboarding program?", "expected_answer": "2 weeks", "expected_source": "onboarding.pptx"},
+  {"id": "q14", "question": "How many approvals are required to merge a code change?", "expected_answer": "Two approvals", "expected_source": "onboarding.pptx"},
+  {"id": "q15", "question": "What is the primary programming language at the company?", "expected_answer": "Python", "expected_source": "onboarding.pptx"}
+]

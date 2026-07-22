@@ -1,0 +1,22 @@
+[
+  {
+    "source": "q3_report.pdf",
+    "text": "Acme Corp Q3 revenue grew 12% year over year to $48 million, led by the APAC region. Operating costs rose 3%. During the quarter the company shipped product SKU-4471 to the Berlin warehouse ahead of schedule."
+  },
+  {
+    "source": "hr_policy.docx",
+    "text": "Employees are entitled to 25 days of paid annual leave per year. Remote work is permitted up to 3 days per week with manager approval. The standard probation period for new hires is 6 months."
+  },
+  {
+    "source": "security.md",
+    "text": "All API access requires JWT authentication. User passwords must be at least 12 characters long. Data is encrypted at rest using AES-256 and in transit using TLS 1.3."
+  },
+  {
+    "source": "product_specs.xlsx",
+    "text": "The X1 sensor operates between -40 and 85 degrees Celsius. Its battery life is 18 months under normal use. The wireless transmission range is 100 meters line of sight."
+  },
+  {
+    "source": "onboarding.pptx",
+    "text": "New engineers complete a 2-week onboarding program. The primary programming language at the company is Python. Every code change requires two approvals before it can be merged."
+  }
+]
