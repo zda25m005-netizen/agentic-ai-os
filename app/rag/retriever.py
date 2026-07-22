@@ -1,14 +1,15 @@
 """Retrieval: turn a question into relevant chunks, then into an answer prompt.
 
-Day 15 is dense (vector) retrieval. Hybrid search (vector + BM25) arrives
-in Day 17; citation-aware answers in Day 18. Keeping the seams clean here
-so those upgrades slot in without touching the API layer.
+Dense (vector) + sparse (BM25) retrieval fused with RRF. Citation-aware
+answers arrive in Day 18. Seams kept clean so upgrades don't touch the API.
 """
 from __future__ import annotations
 
 from qdrant_client import QdrantClient
 
 from app.rag import embeddings, vectorstore
+from app.rag.bm25 import BM25Index
+from app.rag.hybrid import reciprocal_rank_fusion
 from app.rag.vectorstore import SearchHit
 
 DEFAULT_COLLECTION = "documents"
@@ -20,11 +21,32 @@ async def retrieve(
     collection: str = DEFAULT_COLLECTION,
     limit: int = 5,
 ) -> list[SearchHit]:
-    """Embed the query and return the top-`limit` matching chunks."""
+    """Embed the query and return the top-`limit` matching chunks (dense only)."""
     if not query.strip():
         return []
     query_vector = await embeddings.embed_one(query)
     return vectorstore.search(client, collection, query_vector, limit=limit)
+
+
+async def hybrid_retrieve(
+    query: str,
+    client: QdrantClient,
+    bm25_index: BM25Index,
+    collection: str = DEFAULT_COLLECTION,
+    limit: int = 5,
+    fetch_k: int = 20,
+) -> list[SearchHit]:
+    """Dense + BM25 retrieval fused with RRF.
+
+    Both retrievers must key documents by the same id (the Qdrant point id)
+    so fusion can recognize the same chunk across lists. Each retriever
+    fetches `fetch_k` candidates before fusion narrows to `limit`.
+    """
+    if not query.strip():
+        return []
+    dense = await retrieve(query, client, collection, limit=fetch_k)
+    sparse = bm25_index.search(query, limit=fetch_k)
+    return reciprocal_rank_fusion([dense, sparse], limit=limit)
 
 
 def build_context(hits: list[SearchHit]) -> str:
