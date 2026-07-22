@@ -29,7 +29,7 @@ def test_ask_returns_answer_and_sources(monkeypatch):
         ]
 
     async def fake_chat(messages, temperature=0.2):
-        return "Paris."
+        return "The capital is Paris [1]."
 
     monkeypatch.setattr(retriever, "retrieve", fake_retrieve)
     monkeypatch.setattr(llm, "chat", fake_chat)
@@ -37,9 +37,12 @@ def test_ask_returns_answer_and_sources(monkeypatch):
     r = client.post("/ask", json={"question": "What is the capital of France?"})
     assert r.status_code == 200
     body = r.json()
-    assert body["answer"] == "Paris."
+    assert "Paris" in body["answer"]
     assert body["sources"][0]["source"] == "geo.pdf"
     assert body["sources"][0]["score"] == 0.91
+    # The inline [1] marker was parsed into a citation.
+    assert body["citations"][0]["marker"] == 1
+    assert body["citations"][0]["source"] == "geo.pdf"
 
 
 def test_ask_no_hits_returns_dont_know(monkeypatch):

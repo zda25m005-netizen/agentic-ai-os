@@ -4,7 +4,7 @@ from pydantic import BaseModel
 
 from app.core import llm
 from app.core.config import get_settings
-from app.rag import retriever, vectorstore
+from app.rag import citations, retriever, vectorstore
 
 settings = get_settings()
 
@@ -27,6 +27,13 @@ class Source(BaseModel):
     score: float
 
 
+class CitationOut(BaseModel):
+    marker: int
+    source: str
+    chunk_index: int | None = None
+    score: float
+
+
 class AskRequest(BaseModel):
     question: str
     collection: str = retriever.DEFAULT_COLLECTION
@@ -35,6 +42,7 @@ class AskRequest(BaseModel):
 
 class AskResponse(BaseModel):
     answer: str
+    citations: list[CitationOut]
     sources: list[Source]
 
 
@@ -79,7 +87,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
 
 @app.post("/ask", response_model=AskResponse)
 async def ask(req: AskRequest) -> AskResponse:
-    """Answer a question grounded in retrieved documents (RAG)."""
+    """Answer a question grounded in retrieved documents, with citations."""
     if not llm.is_configured():
         raise HTTPException(
             status_code=503,
@@ -91,14 +99,28 @@ async def ask(req: AskRequest) -> AskResponse:
         req.question, client, collection=req.collection, limit=req.top_k
     )
     if not hits:
-        return AskResponse(answer="I don't know — no relevant documents found.", sources=[])
+        return AskResponse(
+            answer="I don't know — no relevant documents found.",
+            citations=[],
+            sources=[],
+        )
 
-    messages = retriever.build_messages(req.question, hits)
+    messages = citations.build_messages(req.question, hits)
     try:
         answer = await llm.chat(messages)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"LLM call failed: {exc}") from exc
 
+    cited = citations.parse_citations(answer, hits)
+    citation_out = [
+        CitationOut(
+            marker=c.marker,
+            source=c.source,
+            chunk_index=c.chunk_index,
+            score=c.score,
+        )
+        for c in cited
+    ]
     sources = [
         Source(
             source=h.payload.get("source", "unknown"),
@@ -107,4 +129,4 @@ async def ask(req: AskRequest) -> AskResponse:
         )
         for h in hits
     ]
-    return AskResponse(answer=answer, sources=sources)
+    return AskResponse(answer=answer, citations=citation_out, sources=sources)
