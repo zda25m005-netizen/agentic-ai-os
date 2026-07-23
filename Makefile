@@ -18,7 +18,7 @@ test:
 	pytest -q
 
 eval:
-	@echo "Eval harness lands in Week 3 (Day 21). Placeholder for now."
+	python -m eval.run
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true

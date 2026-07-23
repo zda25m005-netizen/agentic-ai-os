@@ -45,3 +45,4 @@ htmlcov/
 node_modules/
 .next/
 frontend/out/
+eval/results.json
