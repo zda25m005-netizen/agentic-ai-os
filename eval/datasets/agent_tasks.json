@@ -1,0 +1,7 @@
+[
+  {"id": "t1", "goal": "Research the capital of France and state it clearly.", "expected_keywords": ["paris"], "min_steps": 1},
+  {"id": "t2", "goal": "Explain what RAG (retrieval-augmented generation) is and why it reduces hallucination.", "expected_keywords": ["retrieval", "hallucination"], "min_steps": 1},
+  {"id": "t3", "goal": "Compute the sum of the first five positive integers and show the result.", "expected_keywords": ["15"], "min_steps": 1},
+  {"id": "t4", "goal": "Summarize the benefits of hybrid search combining vector and keyword retrieval.", "expected_keywords": ["vector", "keyword"], "min_steps": 1},
+  {"id": "t5", "goal": "Describe the steps to deploy a FastAPI app with Docker.", "expected_keywords": ["docker", "fastapi"], "min_steps": 2}
+]
