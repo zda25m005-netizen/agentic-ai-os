@@ -52,6 +52,7 @@ Retrieve: `dense (vector) + sparse (BM25) -> RRF fusion -> grounded answer -> in
 | GET | `/config` | Non-secret runtime config |
 | POST | `/chat` | Single-turn chat with the LLM |
 | POST | `/ask` | RAG: grounded, citation-aware answer over ingested docs |
+| POST | `/agent` | Multi-agent: plan -> execute -> critique -> answer |
 
 ## Quickstart
 

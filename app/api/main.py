@@ -2,6 +2,7 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from app.agents.graph import run_agent
 from app.core import llm
 from app.core.config import get_settings
 from app.rag import citations, retriever, vectorstore
@@ -46,6 +47,23 @@ class AskResponse(BaseModel):
     sources: list[Source]
 
 
+class AgentRequest(BaseModel):
+    goal: str
+
+
+class AgentStepOut(BaseModel):
+    id: int
+    description: str
+    agent: str
+    status: str
+
+
+class AgentResponse(BaseModel):
+    answer: str
+    steps: list[AgentStepOut]
+    trace: list[str]
+
+
 @app.get("/health")
 def health() -> dict:
     """Liveness probe."""
@@ -79,7 +97,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
 
     try:
         reply = await llm.chat(messages)
-    except Exception as exc:  # noqa: BLE001 - surface upstream errors as 502
+    except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"LLM call failed: {exc}") from exc
 
     return ChatResponse(reply=reply, model=settings.llm_model)
@@ -130,3 +148,26 @@ async def ask(req: AskRequest) -> AskResponse:
         for h in hits
     ]
     return AskResponse(answer=answer, citations=citation_out, sources=sources)
+
+
+@app.post("/agent", response_model=AgentResponse)
+async def agent(req: AgentRequest) -> AgentResponse:
+    """Run the multi-agent graph (Planner -> Executor -> Critic) on a goal."""
+    if not llm.is_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="LLM not configured. Set OPENAI_API_KEY or LLM_BASE_URL in .env",
+        )
+
+    state = await run_agent(req.goal)
+    steps = [
+        AgentStepOut(
+            id=s.get("id", i),
+            description=s.get("description", ""),
+            agent=s.get("agent", "research"),
+            status=s.get("status", "pending"),
+        )
+        for i, s in enumerate(state.get("plan", []))
+    ]
+    trace = [f"{m['node']}: {m['content']}" for m in state.get("scratchpad", [])]
+    return AgentResponse(answer=state.get("answer", ""), steps=steps, trace=trace)

@@ -16,7 +16,7 @@ from langgraph.graph import END, StateGraph
 from app.agents.critic import critic_node
 from app.agents.executor import executor_node, is_done
 from app.agents.planner import planner_node
-from app.agents.state import AgentState
+from app.agents.state import AgentState, new_state
 
 
 def finalize_node(state: AgentState) -> AgentState:
@@ -51,3 +51,11 @@ def build_graph():
     )
     graph.add_edge("finalize", END)
     return graph.compile()
+
+
+async def run_agent(goal: str, recursion_limit: int = 50) -> AgentState:
+    """Run the full agent graph on a goal and return the final state."""
+    graph = build_graph()
+    return await graph.ainvoke(
+        new_state(goal), config={"recursion_limit": recursion_limit}
+    )
