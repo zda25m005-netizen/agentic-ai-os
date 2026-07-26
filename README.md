@@ -25,6 +25,18 @@ Run end-to-end with `make eval` — ingests a labeled corpus, answers every ques
 
 *Measured on a 15-question labeled set (`eval/datasets/`) with `gpt-4o-mini` + `text-embedding-3-small`. Reproduce with `make eval`. The eval set is being expanded.*
 
+### Agent evaluation
+
+The multi-agent graph, scored on multi-step goals (`eval/datasets/agent_tasks.json`). Reproduce with `python -m eval.agent_eval`.
+
+| Metric | Score |
+|---|---|
+| Task success rate | **100%** |
+| Step completion rate | **100%** |
+| Avg steps / task | 3.2 |
+
+*Measured on 5 multi-step tasks with `gpt-4o-mini`.*
+
 ## Architecture
 
 See [`docs/architecture.md`](docs/architecture.md) for full diagrams, [`docs/DESIGN.md`](docs/DESIGN.md) for design & trade-offs.
