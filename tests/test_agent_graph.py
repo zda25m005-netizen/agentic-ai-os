@@ -20,23 +20,21 @@ def test_finalize_joins_results():
     assert any(m["node"] == "finalize" for m in update["scratchpad"])
 
 
-def _router_chat(approve: bool = True):
-    """A fake LLM that plays planner, worker, and critic by inspecting role."""
-
-    async def fake_chat(messages):
+def _router_chat_raw(approve: bool = True):
+    async def fake(messages, tools=None, temperature=0.2):
         system = messages[0]["content"].lower()
         if "planning agent" in system:
-            return '[{"description": "step A", "agent": "research"}, ' \
-                   '{"description": "step B", "agent": "coding"}]'
+            return {"content": '[{"description": "step A", "agent": "research"}, '
+                               '{"description": "step B", "agent": "coding"}]'}
         if "reviewer" in system:
-            return "APPROVE" if approve else "RETRY: not good enough"
-        return "worker result"
+            return {"content": "APPROVE" if approve else "RETRY: not good enough"}
+        return {"content": "worker result"}
 
-    return fake_chat
+    return fake
 
 
 async def test_full_graph_runs_end_to_end(monkeypatch):
-    monkeypatch.setattr(llm_mod, "chat", _router_chat(approve=True))
+    monkeypatch.setattr(llm_mod, "chat_raw", _router_chat_raw(approve=True))
     graph = build_graph()
 
     result = await graph.ainvoke(new_state("do the task"))
@@ -50,8 +48,7 @@ async def test_full_graph_runs_end_to_end(monkeypatch):
 
 
 async def test_graph_retries_then_finishes(monkeypatch):
-    # Critic always says RETRY; the bounded loop must still terminate.
-    monkeypatch.setattr(llm_mod, "chat", _router_chat(approve=False))
+    monkeypatch.setattr(llm_mod, "chat_raw", _router_chat_raw(approve=False))
     graph = build_graph()
 
     result = await graph.ainvoke(new_state("do the task"))

@@ -1,7 +1,8 @@
 """Minimal LLM client (OpenAI-compatible chat completions).
 
 Works with OpenAI or any OpenAI-compatible endpoint via LLM_BASE_URL.
-Kept dependency-light (httpx) on purpose; swap for the official SDK later if needed.
+`chat` returns text; `chat_raw` returns the full assistant message (with
+tool_calls) so the agent's tool-use loop can act on function calls.
 """
 from __future__ import annotations
 
@@ -24,25 +25,42 @@ def _base_url() -> str:
     return (s.llm_base_url or "https://api.openai.com/v1").rstrip("/")
 
 
-async def chat(messages: list[dict], temperature: float = 0.2) -> str:
-    """Send chat messages, return the assistant's text.
-
-    messages: [{"role": "user"|"system"|"assistant", "content": "..."}]
-    """
+async def _post(payload: dict) -> dict:
     s = get_settings()
-    if not is_configured():
-        raise LLMNotConfigured("Set OPENAI_API_KEY or LLM_BASE_URL in your .env")
-
     headers = {"Content-Type": "application/json"}
     if s.openai_api_key:
         headers["Authorization"] = f"Bearer {s.openai_api_key}"
-
-    payload = {"model": s.llm_model, "messages": messages, "temperature": temperature}
-
-    async with httpx.AsyncClient(timeout=60) as client:
+    async with httpx.AsyncClient(timeout=90) as client:
         resp = await client.post(
             f"{_base_url()}/chat/completions", json=payload, headers=headers
         )
         resp.raise_for_status()
-        data = resp.json()
-    return data["choices"][0]["message"]["content"]
+        return resp.json()
+
+
+async def chat_raw(
+    messages: list[dict],
+    tools: list[dict] | None = None,
+    temperature: float = 0.2,
+) -> dict:
+    """Send messages (optionally with tool specs); return the assistant message.
+
+    The returned dict may contain `content` and/or `tool_calls`.
+    """
+    if not is_configured():
+        raise LLMNotConfigured("Set OPENAI_API_KEY or LLM_BASE_URL in your .env")
+    payload: dict = {
+        "model": get_settings().llm_model,
+        "messages": messages,
+        "temperature": temperature,
+    }
+    if tools:
+        payload["tools"] = tools
+    data = await _post(payload)
+    return data["choices"][0]["message"]
+
+
+async def chat(messages: list[dict], temperature: float = 0.2) -> str:
+    """Send chat messages, return the assistant's text."""
+    message = await chat_raw(messages, temperature=temperature)
+    return message.get("content") or ""

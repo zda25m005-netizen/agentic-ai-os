@@ -15,15 +15,15 @@ def test_agent_requires_config(monkeypatch):
 def test_agent_runs_and_returns_plan(monkeypatch):
     monkeypatch.setattr(llm_mod, "is_configured", lambda: True)
 
-    async def fake_chat(messages):
+    async def fake_chat_raw(messages, tools=None, temperature=0.2):
         system = messages[0]["content"].lower()
         if "planning agent" in system:
-            return '[{"description": "gather facts", "agent": "research"}]'
+            return {"content": '[{"description": "gather facts", "agent": "research"}]'}
         if "reviewer" in system:
-            return "APPROVE"
-        return "the worker did the thing"
+            return {"content": "APPROVE"}
+        return {"content": "the worker did the thing"}
 
-    monkeypatch.setattr(llm_mod, "chat", fake_chat)
+    monkeypatch.setattr(llm_mod, "chat_raw", fake_chat_raw)
 
     r = client.post("/agent", json={"goal": "summarize the report"})
     assert r.status_code == 200

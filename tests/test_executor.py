@@ -21,32 +21,27 @@ def test_is_done():
 async def test_execute_step_uses_agent_prompt():
     captured = {}
 
-    async def fake_chat(messages):
+    async def fake_chat_raw(messages, tools=None, temperature=0.2):
         captured["system"] = messages[0]["content"]
-        return "result text"
+        return {"content": "result text"}
 
     step = Step(id=0, description="do sql", agent="sql", status="pending")
-    out = await executor.execute_step(step, chat_fn=fake_chat)
+    out = await executor.execute_step(step, chat_raw=fake_chat_raw)
     assert out == "result text"
     assert "data agent" in captured["system"]
 
 
-def _patch_chat(fake):
+def _patch_chat_raw(monkeypatch, fake):
     import app.core.llm as llm_mod
-    orig = llm_mod.chat
-    llm_mod.chat = fake
-    return llm_mod, orig
+    monkeypatch.setattr(llm_mod, "chat_raw", fake)
 
 
-async def test_executor_node_runs_current_step_and_advances():
-    async def fake_chat(messages):
-        return "step result"
+async def test_executor_node_runs_current_step_and_advances(monkeypatch):
+    async def fake_chat_raw(messages, tools=None, temperature=0.2):
+        return {"content": "step result"}
 
-    llm_mod, orig = _patch_chat(fake_chat)
-    try:
-        update = await executor.executor_node(_state_with_plan())
-    finally:
-        llm_mod.chat = orig
+    _patch_chat_raw(monkeypatch, fake_chat_raw)
+    update = await executor.executor_node(_state_with_plan())
 
     assert update["cursor"] == 1
     assert update["results"] == ["step result"]
@@ -62,18 +57,15 @@ async def test_executor_node_noop_when_cursor_past_end():
     assert update == {}
 
 
-async def test_executor_walks_all_steps():
-    async def fake_chat(messages):
-        return "ok"
+async def test_executor_walks_all_steps(monkeypatch):
+    async def fake_chat_raw(messages, tools=None, temperature=0.2):
+        return {"content": "ok"}
 
-    llm_mod, orig = _patch_chat(fake_chat)
-    try:
-        state = _state_with_plan()
-        for _ in range(len(state["plan"])):
-            update = await executor.executor_node(state)
-            state.update(update)
-    finally:
-        llm_mod.chat = orig
+    _patch_chat_raw(monkeypatch, fake_chat_raw)
+    state = _state_with_plan()
+    for _ in range(len(state["plan"])):
+        update = await executor.executor_node(state)
+        state.update(update)
 
     assert state["cursor"] == 2
     assert len(state["results"]) == 2

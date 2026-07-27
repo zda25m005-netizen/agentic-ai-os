@@ -1,29 +1,27 @@
-"""Executor node: run the current plan step, routed by agent type.
+"""Executor node: run the current plan step with tools, routed by agent type.
 
-Each step is handled by a specialist "worker" — for now every worker is
-the LLM under a role-specific system prompt. Real tool calls (RAG, SQL,
-Python) are wired in from Day 36; the routing seam here means those slot in
-without changing the graph. The node runs ONE step per invocation and
-advances the cursor, so the Day 26 loop can re-enter until the plan is done.
+Each step runs through the tool-use loop, so a worker can call any
+registered tool (web search, python, sql, rag, files, ...) to complete its
+task — not just describe it. The node runs ONE step per invocation and
+advances the cursor so the Day 26 loop can re-enter until the plan is done.
 """
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-
+import app.tools  # noqa: F401  (import registers all tools into the registry)
 from app.agents.state import AgentState, Step
-from app.core import llm
-
-ChatFn = Callable[[list[dict]], Awaitable[str]]
+from app.agents.tool_loop import ChatRawFn, run_with_tools
+from app.tools.registry import ToolRegistry
 
 AGENT_PROMPTS = {
     "research": "You are a research agent. Complete the step by providing the "
-    "specific information requested. Be concise and factual.",
-    "coding": "You are a coding agent. Complete the step by writing the code "
-    "needed and stating the result.",
-    "sql": "You are a data agent. Complete the step by describing the query "
-    "and the result it would return.",
-    "browser": "You are a browsing agent. Complete the step using current "
-    "web knowledge. Be concise.",
+    "specific information requested. Use tools (web_search, rag_search, "
+    "wikipedia) when they help; otherwise answer directly. Be concise.",
+    "coding": "You are a coding agent. Complete the step; use the python_exec "
+    "or calculator tool to run code, then state the result. Be concise.",
+    "sql": "You are a data agent. Use the sql_query or analyze_csv tool to "
+    "answer from data, then summarize the result. Be concise.",
+    "browser": "You are a browsing agent. Use web_search or http_get to gather "
+    "current information, then answer concisely.",
 }
 
 
@@ -32,15 +30,18 @@ def is_done(state: AgentState) -> bool:
     return state.get("cursor", 0) >= len(state.get("plan", []))
 
 
-async def execute_step(step: Step, chat_fn: ChatFn | None = None) -> str:
-    """Run a single step with the worker prompt for its agent type."""
-    chat_fn = chat_fn or llm.chat
+async def execute_step(
+    step: Step,
+    chat_raw: ChatRawFn | None = None,
+    registry: ToolRegistry | None = None,
+) -> str:
+    """Run a single step via the tool-use loop with its worker prompt."""
     system = AGENT_PROMPTS.get(step.get("agent", "research"), AGENT_PROMPTS["research"])
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": step.get("description", "")},
     ]
-    return await chat_fn(messages)
+    return await run_with_tools(messages, registry=registry, chat_raw=chat_raw)
 
 
 async def executor_node(state: AgentState) -> AgentState:
