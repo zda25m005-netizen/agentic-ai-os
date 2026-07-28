@@ -2,7 +2,6 @@ import pytest
 
 from app.rag import embeddings, vectorstore
 from eval import ablation, run
-from eval.dataset import CorpusDoc, QAItem
 
 
 @pytest.fixture
@@ -13,43 +12,42 @@ def client():
 @pytest.fixture(autouse=True)
 def fake_embeddings(monkeypatch):
     async def fake_embed(texts):
-        return [[1.0, 0.0, 0.0] for _ in texts]
+        return [[float(len(t) % 11), float(len(t) % 7), 1.0] for t in texts]
 
     monkeypatch.setattr(embeddings, "embed", fake_embed)
 
 
-CORPUS = [
-    CorpusDoc(source="finance.pdf", text="Quarterly revenue grew 12 percent in Q3."),
-    CorpusDoc(source="hr.pdf", text="Employees get 25 days of annual leave."),
-    CorpusDoc(source="sku.pdf", text="Invoice SKU-4471 shipped to Berlin warehouse."),
-]
-QA = [
-    QAItem("a", "How much did quarterly revenue grow?", "12 percent", "finance.pdf"),
-    QAItem("b", "How many days of annual leave?", "25 days", "hr.pdf"),
-    QAItem("c", "Where was SKU-4471 shipped?", "Berlin", "sku.pdf"),
-]
+def test_ablation_dataset_loads():
+    corpus = ablation.load_ablation_corpus()
+    qa = ablation.load_ablation_qa()
+    assert len(corpus) >= 10
+    assert len(qa) >= 10
+    sources = {d.source for d in corpus}
+    assert all(item.expected_source in sources for item in qa)
 
 
 async def test_run_ablation_reports_all_modes(client):
-    bm25 = await run.build_indexes(CORPUS, client, collection="eval_documents")
-    results = await ablation.run_ablation(QA, client, bm25, collection="eval_documents")
+    corpus, qa = ablation.load_ablation_corpus(), ablation.load_ablation_qa()
+    bm25 = await run.build_indexes(corpus, client, collection=ablation.ABLATION_COLLECTION)
+    results = await ablation.run_ablation(qa, client, bm25, top_k=3)
 
     assert set(results) == {"vector", "bm25", "hybrid"}
     for mode, score in results.items():
         assert 0.0 <= score <= 1.0, mode
 
 
-async def test_bm25_finds_exact_terms(client):
-    bm25 = await run.build_indexes(CORPUS, client, collection="eval_documents")
-    results = await ablation.run_ablation(QA, client, bm25, collection="eval_documents")
+async def test_bm25_recovers_exact_codes(client):
+    corpus, qa = ablation.load_ablation_corpus(), ablation.load_ablation_qa()
+    bm25 = await run.build_indexes(corpus, client, collection=ablation.ABLATION_COLLECTION)
+    results = await ablation.run_ablation(qa, client, bm25, top_k=3)
     assert results["bm25"] > 0.0
 
 
-def test_format_ablation_md():
-    md = ablation.format_ablation_md(
-        {"vector": 0.6, "bm25": 0.7, "hybrid": 0.9}, top_k=5
+def test_format_ablation_table_multi_k():
+    md = ablation.format_ablation_table(
+        {1: {"vector": 0.5, "bm25": 0.6, "hybrid": 0.8},
+         3: {"vector": 0.7, "bm25": 0.7, "hybrid": 0.9}}
     )
-    assert "Vector only" in md
-    assert "BM25 only" in md
-    assert "Hybrid (RRF)" in md
-    assert "90%" in md
+    assert "Recall@1" in md and "Recall@3" in md
+    assert "Vector only" in md and "Hybrid (RRF)" in md
+    assert "80%" in md

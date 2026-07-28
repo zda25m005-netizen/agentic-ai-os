@@ -1,0 +1,12 @@
+[
+  {"id": "ex1", "question": "Where was SKU-4471 shipped?", "expected_answer": "Berlin warehouse", "expected_source": "logistics_4471.pdf"},
+  {"id": "ex2", "question": "Which invoice went to Munich?", "expected_answer": "SKU-9902", "expected_source": "logistics_9902.pdf"},
+  {"id": "ex3", "question": "What cipher is used to encrypt data at rest?", "expected_answer": "AES-256", "expected_source": "security_crypto.md"},
+  {"id": "ex4", "question": "What token type does the API require?", "expected_answer": "JSON Web Token", "expected_source": "security_auth.md"},
+  {"id": "pa1", "question": "How much did the company's third-quarter sales increase?", "expected_answer": "12%", "expected_source": "finance_q3.pdf"},
+  {"id": "pa2", "question": "How many vacation days does staff receive?", "expected_answer": "25 days", "expected_source": "hr_leave.pdf"},
+  {"id": "pa3", "question": "Can I do my job from home part of the week?", "expected_answer": "up to three days per week", "expected_source": "hr_remote.pdf"},
+  {"id": "pa4", "question": "How long does the device run before recharging?", "expected_answer": "18 months", "expected_source": "product_x1.xlsx"},
+  {"id": "mix1", "question": "What coding language do new hires use?", "expected_answer": "Python", "expected_source": "onboarding.pptx"},
+  {"id": "mix2", "question": "How long is the initial training for engineers?", "expected_answer": "two weeks", "expected_source": "onboarding.pptx"}
+]

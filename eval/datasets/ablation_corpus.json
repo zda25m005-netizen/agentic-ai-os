@@ -1,0 +1,12 @@
+[
+  {"source": "finance_q3.pdf", "text": "Acme Corp third-quarter revenue rose 12% year over year to $48 million, led by strong performance in the APAC region."},
+  {"source": "finance_q2.pdf", "text": "Acme Corp second-quarter revenue was roughly flat at $43 million, with modest growth in EMEA."},
+  {"source": "hr_leave.pdf", "text": "Full-time employees are entitled to 25 days of paid annual leave each year, accrued monthly."},
+  {"source": "hr_remote.pdf", "text": "Staff may work from home up to three days per week, subject to manager approval and team coverage."},
+  {"source": "security_auth.md", "text": "Access to the platform API requires a valid JSON Web Token; unauthenticated requests are rejected."},
+  {"source": "security_crypto.md", "text": "All stored data is encrypted at rest using the AES-256 cipher, and traffic uses TLS 1.3 in transit."},
+  {"source": "product_x1.xlsx", "text": "The X1 environmental sensor offers 18 months of battery life and a wireless transmission range of 100 meters."},
+  {"source": "logistics_4471.pdf", "text": "Invoice SKU-4471 was shipped to the Berlin warehouse ahead of schedule and signed for on arrival."},
+  {"source": "logistics_9902.pdf", "text": "Invoice SKU-9902 was dispatched to the Munich distribution center with a two-day delay."},
+  {"source": "onboarding.pptx", "text": "New engineers complete a two-week onboarding program; the primary programming language used across teams is Python."}
+]
