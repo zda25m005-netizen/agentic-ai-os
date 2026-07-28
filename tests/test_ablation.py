@@ -43,11 +43,26 @@ async def test_bm25_recovers_exact_codes(client):
     assert results["bm25"] > 0.0
 
 
+async def test_run_ablation_includes_rerank_when_provided(client):
+    corpus, qa = ablation.load_ablation_corpus(), ablation.load_ablation_qa()
+    bm25 = await run.build_indexes(corpus, client, collection=ablation.ABLATION_COLLECTION)
+
+    async def perfect_rerank(query, hits):
+        return list(reversed(hits))
+
+    results = await ablation.run_ablation(
+        qa, client, bm25, top_k=3, rerank_fn=perfect_rerank
+    )
+    assert "rerank" in results
+    assert 0.0 <= results["rerank"] <= 1.0
+
+
 def test_format_ablation_table_multi_k():
     md = ablation.format_ablation_table(
-        {1: {"vector": 0.5, "bm25": 0.6, "hybrid": 0.8},
-         3: {"vector": 0.7, "bm25": 0.7, "hybrid": 0.9}}
+        {1: {"vector": 0.5, "bm25": 0.6, "hybrid": 0.8, "rerank": 0.9},
+         3: {"vector": 0.7, "bm25": 0.7, "hybrid": 0.9, "rerank": 1.0}}
     )
     assert "Recall@1" in md and "Recall@3" in md
     assert "Vector only" in md and "Hybrid (RRF)" in md
+    assert "Hybrid + reranker" in md
     assert "80%" in md
