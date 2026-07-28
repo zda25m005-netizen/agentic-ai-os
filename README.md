@@ -2,32 +2,36 @@
 
 ![CI](https://github.com/zda25m005-netizen/agentic-ai-os/actions/workflows/ci.yml/badge.svg)
 
-> A production-grade, multi-agent AI platform that reasons, plans, and executes complex tasks over enterprise data — with hybrid retrieval, tool use, long-term memory, and a real evaluation harness.
+> A retrieval-augmented, multi-agent AI system with a **rigorous, reproducible evaluation harness** — built and measured, not just assembled.
 
-**Status:** 🚧 In active development. Building in public — one commit a day.
+Two working systems, both benchmarked: a hybrid-RAG engine that answers questions over documents with citations, and a LangGraph multi-agent orchestrator that plans, calls real tools, and self-critiques. Every capability ships with an automated eval and real numbers.
+
+**Status:** actively developed, built in public — one commit a day, ~190 tests, green CI.
 
 ---
 
-## Why this project
+## What's built and proven
 
-Most "AI agent" portfolios wire tutorials together and can't prove anything works. This one is built around **measurement**: every capability ships with an automated evaluation and real numbers.
+- **Hybrid RAG** — PDF/DOCX/PPTX/XLSX ingestion → recursive chunking → dense + BM25 retrieval fused with RRF → LLM reranker → grounded, **citation-aware** answers. *Measured: 100% retrieval recall@5, 100% answer correctness.*
+- **Multi-agent orchestrator** — Planner → Executor → Critic graph (LangGraph) with a bounded retry loop and a **function-calling tool-use loop** across 11 tools. *Measured: 100% task success on multi-step goals.*
+- **Evaluation harness** — labeled datasets, automated scorers (recall, LLM-judge correctness, citation accuracy), and a **retrieval ablation** comparing strategies. One command: `make eval`, `make ablation`.
 
 ## Evaluation
 
-Run end-to-end with `make eval` — ingests a labeled corpus, answers every question with the real hybrid-retrieval + citation pipeline, and scores against gold labels.
+Everything below is reproducible from the repo.
+
+### RAG quality (`make eval`)
 
 | Metric | Score |
 |---|---|
 | Retrieval recall@5 | **100%** |
 | Answer correctness (LLM-judge) | **100%** |
-| Answer match (exact substring) | **93%** |
+| Answer match (exact substring) | 93% |
 | Citation accuracy | **100%** |
 
-*Measured on a 15-question labeled set (`eval/datasets/`) with `gpt-4o-mini` + `text-embedding-3-small`. Reproduce with `make eval`. The eval set is being expanded.*
+*15-question labeled set (`eval/datasets/`), `gpt-4o-mini` + `text-embedding-3-small`.*
 
-### Agent evaluation
-
-The multi-agent graph, scored on multi-step goals (`eval/datasets/agent_tasks.json`). Reproduce with `python -m eval.agent_eval`.
+### Agent task success (`python -m eval.agent_eval`)
 
 | Metric | Score |
 |---|---|
@@ -35,65 +39,77 @@ The multi-agent graph, scored on multi-step goals (`eval/datasets/agent_tasks.js
 | Step completion rate | **100%** |
 | Avg steps / task | 3.2 |
 
-*Measured on 5 multi-step tasks with `gpt-4o-mini`.*
+*5 multi-step goals.*
 
-### Retrieval ablation — why hybrid + reranker
+### Retrieval ablation (`make ablation`)
 
-Controlled comparison on a purpose-built 10-document benchmark with deliberately hard queries: exact identifiers (SKU codes, cipher names) that favor keyword search, and paraphrased queries that favor dense vectors. Reproduce with `make ablation`.
+A controlled comparison on a purpose-built 10-doc benchmark with hard queries — exact identifiers (SKU codes) that favor keyword search, and paraphrases that favor dense vectors.
 
 | Retrieval strategy | Recall@1 | Recall@3 |
 |---|---|---|
 | Vector only (dense) | 100% | 100% |
 | BM25 only (sparse) | 80% | 90% |
 | Hybrid (RRF) | 90% | 100% |
-| Hybrid + reranker | 100% | 100% |
+| **Hybrid + reranker** | **100%** | **100%** |
 
-**Analysis.** On this small, clean corpus a strong embedding model already saturates dense retrieval, so vector-only is a hard baseline. Fusing BM25 via RRF slightly dilutes the dense signal at rank 1 (90%); adding an LLM reranker recovers it to 100%. BM25 alone is weakest, confirming keyword matching is insufficient for paraphrased queries. The default configuration is hybrid + reranker; the advantage of hybrid/BM25 grows on larger, noisier, or identifier-heavy corpora and with weaker embedding models.
+**Analysis.** On this small, clean corpus a strong embedding model saturates dense retrieval, so vector-only is a hard baseline. Fusing BM25 via RRF dilutes the dense signal at rank 1 (90%); an LLM reranker recovers it to 100%. BM25 alone is weakest, confirming keyword matching is insufficient for paraphrases. The advantage of hybrid/BM25 grows on larger, noisier, or identifier-heavy corpora and with weaker embedding models — this benchmark honestly shows where each method wins.
 
 ## Architecture
 
-See [`docs/architecture.md`](docs/architecture.md) for full diagrams, [`docs/DESIGN.md`](docs/DESIGN.md) for design & trade-offs.
+```mermaid
+flowchart TB
+    UI["Client / API (FastAPI)"] --> PL["Planner"]
+    PL --> EX["Executor (tool-use loop)"]
+    EX --> TOOLS["11 tools: web · python · sql · rag · files · ..."]
+    EX --> CR["Critic (bounded retries)"]
+    CR -->|approve| FIN["Finalize"]
+    CR -.->|retry| EX
+    EX --> RAG["Hybrid RAG + reranker"]
+    RAG --> VDB[("Qdrant")]
+```
 
-## RAG pipeline
+Full diagrams in [docs/architecture.md](docs/architecture.md) · design & trade-offs in [docs/DESIGN.md](docs/DESIGN.md).
 
-Ingest: `load (PDF/DOCX/PPTX/XLSX) -> recursive chunk (overlap) -> embed -> store (Qdrant)`
-Retrieve: `dense (vector) + sparse (BM25) -> RRF fusion -> grounded answer -> inline [n] citations`
+## Tools (11, all tested)
 
-## Tech stack
+`calculator` · `web_search` · `python_exec` (sandboxed) · `sql_query` (read-only) · `rag_search` · `current_datetime` · `http_get` (SSRF-guarded) · `wikipedia` · `file_read/write/list` (path-traversal guarded) · `analyze_csv` (pandas) · `delegate` (recursive sub-agent).
 
-| Layer | Choice |
-|---|---|
-| LLM | OpenAI-compatible (GPT-4o-mini) · Qwen/Llama LoRA planned |
-| Backend | FastAPI |
-| Vector DB | Qdrant |
-| Retrieval | Hybrid: dense + BM25 (from scratch) fused with RRF |
-| Agents / KG / Frontend | LangGraph · Neo4j · Next.js (planned) |
+Adding a tool is ~40 lines: an async function + a `@tool` decorator with a JSON schema. The registry exposes them as OpenAI function-calling specs; the agent picks and invokes them autonomously.
 
 ## API
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/health` | Liveness probe |
-| GET | `/config` | Non-secret runtime config |
-| POST | `/chat` | Single-turn chat with the LLM |
-| POST | `/ask` | RAG: grounded, citation-aware answer over ingested docs |
-| POST | `/agent` | Multi-agent: plan -> execute -> critique -> answer |
+| GET | `/health` · `/config` | Liveness / runtime config |
+| POST | `/chat` | Single-turn chat |
+| POST | `/ask` | Hybrid RAG with inline citations |
+| POST | `/agent` | Multi-agent: plan → tool use → critique → answer |
+
+## Tech stack
+
+**Built:** FastAPI · Qdrant · hybrid retrieval (dense + BM25 + RRF + LLM reranker) · LangGraph agents · function-calling tool loop · pytest/CI · Docker Compose (Qdrant).
+
+**Designed / roadmap (not yet built):** Neo4j knowledge graph · LoRA fine-tuning + DPO preference tuning · a feedback-driven reranker · Postgres-backed long-term memory · Prometheus/Grafana + Langfuse observability · Kubernetes/Helm deploy · Next.js frontend. These are scoped in [docs/DESIGN.md](docs/DESIGN.md) as design, not claimed as complete.
 
 ## Quickstart
 
 ```bash
 git clone https://github.com/zda25m005-netizen/agentic-ai-os.git
 cd agentic-ai-os
-cp .env.example .env        # add your OPENAI_API_KEY
-make install
-make run                    # FastAPI on :8000
-make test                   # run tests
-make eval                   # run the evaluation harness
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+cp .env.example .env          # add OPENAI_API_KEY
+make test                     # ~190 tests
+make eval                     # RAG metrics
+make ablation                 # retrieval comparison
+make run                      # FastAPI on :8000
 ```
 
-## Roadmap
+## Design notes & honesty
 
-Built over ~4 months, daily commits. Done: ingestion, hybrid RAG, citations, eval harness. Next: multi-agent orchestration, tools, memory, fine-tuning, observability, frontend. See [`docs/DESIGN.md`](docs/DESIGN.md).
+- Metrics are on small labeled sets (15 Q&A, 10-doc ablation, 5 agent tasks); they demonstrate the harness and current quality, and are being expanded — sample sizes are stated, not hidden.
+- The "learn from feedback" component is scoped as **DPO + a feedback reranker** (a tractable, defensible alternative to full RLHF), not reinforcement learning.
+- Kubernetes, Kafka, and knowledge-graph pieces are documented designs, deliberately not half-implemented.
 
 ## License
 
