@@ -37,6 +37,19 @@ The multi-agent graph, scored on multi-step goals (`eval/datasets/agent_tasks.js
 
 *Measured on 5 multi-step tasks with `gpt-4o-mini`.*
 
+### Retrieval ablation — why hybrid + reranker
+
+Controlled comparison on a purpose-built 10-document benchmark with deliberately hard queries: exact identifiers (SKU codes, cipher names) that favor keyword search, and paraphrased queries that favor dense vectors. Reproduce with `make ablation`.
+
+| Retrieval strategy | Recall@1 | Recall@3 |
+|---|---|---|
+| Vector only (dense) | 100% | 100% |
+| BM25 only (sparse) | 80% | 90% |
+| Hybrid (RRF) | 90% | 100% |
+| Hybrid + reranker | 100% | 100% |
+
+**Analysis.** On this small, clean corpus a strong embedding model already saturates dense retrieval, so vector-only is a hard baseline. Fusing BM25 via RRF slightly dilutes the dense signal at rank 1 (90%); adding an LLM reranker recovers it to 100%. BM25 alone is weakest, confirming keyword matching is insufficient for paraphrased queries. The default configuration is hybrid + reranker; the advantage of hybrid/BM25 grows on larger, noisier, or identifier-heavy corpora and with weaker embedding models.
+
 ## Architecture
 
 See [`docs/architecture.md`](docs/architecture.md) for full diagrams, [`docs/DESIGN.md`](docs/DESIGN.md) for design & trade-offs.
