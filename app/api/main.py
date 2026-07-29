@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from app.agents.graph import run_agent
 from app.core import llm
 from app.core.config import get_settings
+from app.obs import tracing
 from app.rag import citations, retriever, vectorstore
 
 settings = get_settings()
@@ -47,6 +48,14 @@ class AskResponse(BaseModel):
     sources: list[Source]
 
 
+class Metrics(BaseModel):
+    spans: int
+    total_ms: float
+    prompt_tokens: int
+    completion_tokens: int
+    est_cost_usd: float
+
+
 class AgentRequest(BaseModel):
     goal: str
 
@@ -62,6 +71,7 @@ class AgentResponse(BaseModel):
     answer: str
     steps: list[AgentStepOut]
     trace: list[str]
+    metrics: Metrics
 
 
 @app.get("/health")
@@ -152,14 +162,20 @@ async def ask(req: AskRequest) -> AskResponse:
 
 @app.post("/agent", response_model=AgentResponse)
 async def agent(req: AgentRequest) -> AgentResponse:
-    """Run the multi-agent graph (Planner -> Executor -> Critic) on a goal."""
+    """Run the multi-agent graph on a goal; report latency, tokens, and cost."""
     if not llm.is_configured():
         raise HTTPException(
             status_code=503,
             detail="LLM not configured. Set OPENAI_API_KEY or LLM_BASE_URL in .env",
         )
 
-    state = await run_agent(req.goal)
+    trace = tracing.start_trace()
+    try:
+        state = await tracing.traced("agent.run", run_agent(req.goal))
+        summary = trace.summary()
+    finally:
+        tracing.clear_trace()
+
     steps = [
         AgentStepOut(
             id=s.get("id", i),
@@ -169,5 +185,14 @@ async def agent(req: AgentRequest) -> AgentResponse:
         )
         for i, s in enumerate(state.get("plan", []))
     ]
-    trace = [f"{m['node']}: {m['content']}" for m in state.get("scratchpad", [])]
-    return AgentResponse(answer=state.get("answer", ""), steps=steps, trace=trace)
+    trace_lines = [f"{m['node']}: {m['content']}" for m in state.get("scratchpad", [])]
+    metrics = Metrics(
+        spans=summary["spans"],
+        total_ms=summary["total_ms"],
+        prompt_tokens=summary["prompt_tokens"],
+        completion_tokens=summary["completion_tokens"],
+        est_cost_usd=summary["est_cost_usd"],
+    )
+    return AgentResponse(
+        answer=state.get("answer", ""), steps=steps, trace=trace_lines, metrics=metrics
+    )

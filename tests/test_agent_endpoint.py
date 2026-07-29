@@ -33,3 +33,8 @@ def test_agent_runs_and_returns_plan(monkeypatch):
     assert body["steps"][0]["status"] == "done"
     assert any("planner" in line for line in body["trace"])
     assert any("finalize" in line for line in body["trace"])
+    m = body["metrics"]
+    assert m["spans"] >= 1
+    assert m["total_ms"] >= 0
+    assert "est_cost_usd" in m
+    assert "prompt_tokens" in m
