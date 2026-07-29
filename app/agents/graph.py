@@ -5,9 +5,8 @@
                                  |  --approve & done--> finalize --> END
 
 The Critic's conditional edge is what makes this agentic: after every step
-it decides whether to keep going, redo the step, or finish. `is_done`
-(cursor past the last step) routes to the finalizer; otherwise the graph
-re-enters the Executor — either on the next step or a rolled-back retry.
+it decides whether to keep going, redo the step, or finish. The finalizer
+synthesizes the answer and persists the run to long-term memory (if set).
 """
 from __future__ import annotations
 
@@ -17,14 +16,21 @@ from app.agents.critic import critic_node
 from app.agents.executor import executor_node, is_done
 from app.agents.planner import planner_node
 from app.agents.state import AgentState, new_state
+from app.memory.manager import get_memory
 
 
-def finalize_node(state: AgentState) -> AgentState:
-    """Synthesize the final answer from the collected step results."""
+async def finalize_node(state: AgentState) -> AgentState:
+    """Synthesize the final answer and persist the run to memory (if set)."""
     results = state.get("results", [])
     answer = "\n\n".join(results)
     scratchpad = list(state.get("scratchpad", []))
     scratchpad.append({"node": "finalize", "content": "synthesized final answer"})
+
+    memory = get_memory()
+    if memory is not None:
+        await memory.remember(state.get("goal", ""), answer)
+        scratchpad.append({"node": "finalize", "content": "saved run to memory"})
+
     return {"answer": answer, "scratchpad": scratchpad}
 
 

@@ -1,8 +1,10 @@
 """Planner agent: decompose a goal into an ordered, typed plan.
 
 Asks the LLM for a JSON array of steps, each tagged with the worker that
-should handle it. Parsing is defensive — a malformed response degrades to
-a single research step rather than crashing the graph.
+should handle it. If long-term memory is configured, relevant past runs are
+recalled and injected as context so the planner can reuse prior work.
+Parsing is defensive — a malformed response degrades to a single research
+step rather than crashing the graph.
 """
 from __future__ import annotations
 
@@ -12,6 +14,7 @@ from collections.abc import Awaitable, Callable
 
 from app.agents.state import AgentState, Step
 from app.core import llm
+from app.memory.manager import MemoryManager, get_memory
 
 WORKER_TYPES = ("research", "coding", "sql", "browser")
 
@@ -54,27 +57,40 @@ def parse_plan(raw: str, goal: str) -> list[Step]:
                 return steps
         except (json.JSONDecodeError, TypeError):
             pass
-    # Fallback: a single research step covering the whole goal.
     return [Step(id=0, description=goal, agent="research", status="pending")]
 
 
-async def plan_goal(goal: str, chat_fn: ChatFn | None = None) -> list[Step]:
-    """Produce a plan for the goal using the LLM (or an injected chat fn)."""
+async def plan_goal(
+    goal: str, chat_fn: ChatFn | None = None, memory_context: str = ""
+) -> list[Step]:
+    """Produce a plan for the goal, optionally with recalled memory context."""
     chat_fn = chat_fn or llm.chat
+    user = f"Goal: {goal}"
+    if memory_context:
+        user += f"\n\n{memory_context}\n(Reuse relevant past work if helpful.)"
     messages = [
         {"role": "system", "content": _PLANNER_SYSTEM},
-        {"role": "user", "content": f"Goal: {goal}"},
+        {"role": "user", "content": user},
     ]
     raw = await chat_fn(messages)
     return parse_plan(raw, goal)
 
 
 async def planner_node(state: AgentState) -> AgentState:
-    """Graph node: fill state['plan'] from the goal."""
+    """Graph node: fill state['plan'] from the goal, using memory if present."""
     goal = state.get("goal", "")
-    plan = await plan_goal(goal)
     scratchpad = list(state.get("scratchpad", []))
-    scratchpad.append(
-        {"node": "planner", "content": f"planned {len(plan)} step(s)"}
-    )
+
+    memory_context = ""
+    memory = get_memory()
+    if memory is not None:
+        hits = await memory.recall(goal)
+        memory_context = MemoryManager.format_recall(hits)
+        if hits:
+            scratchpad.append(
+                {"node": "planner", "content": f"recalled {len(hits)} past run(s)"}
+            )
+
+    plan = await plan_goal(goal, memory_context=memory_context)
+    scratchpad.append({"node": "planner", "content": f"planned {len(plan)} step(s)"})
     return {"plan": plan, "cursor": 0, "scratchpad": scratchpad}

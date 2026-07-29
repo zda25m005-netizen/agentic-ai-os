@@ -12,10 +12,10 @@ def test_new_state_defaults():
     assert s["verdict"] is None
 
 
-def test_finalize_joins_results():
+async def test_finalize_joins_results():
     state = new_state("goal")
     state["results"] = ["first", "second"]
-    update = finalize_node(state)
+    update = await finalize_node(state)  # no memory set -> just synthesizes
     assert update["answer"] == "first\n\nsecond"
     assert any(m["node"] == "finalize" for m in update["scratchpad"])
 
