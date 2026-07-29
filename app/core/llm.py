@@ -2,13 +2,16 @@
 
 Works with OpenAI or any OpenAI-compatible endpoint via LLM_BASE_URL.
 `chat` returns text; `chat_raw` returns the full assistant message (with
-tool_calls) so the agent's tool-use loop can act on function calls.
+tool_calls). Every call records a trace span with latency + token usage.
 """
 from __future__ import annotations
+
+import time
 
 import httpx
 
 from app.core.config import get_settings
+from app.obs import tracing
 
 
 class LLMNotConfigured(RuntimeError):
@@ -43,20 +46,25 @@ async def chat_raw(
     tools: list[dict] | None = None,
     temperature: float = 0.2,
 ) -> dict:
-    """Send messages (optionally with tool specs); return the assistant message.
-
-    The returned dict may contain `content` and/or `tool_calls`.
-    """
+    """Send messages (optionally with tool specs); return the assistant message."""
     if not is_configured():
         raise LLMNotConfigured("Set OPENAI_API_KEY or LLM_BASE_URL in your .env")
-    payload: dict = {
-        "model": get_settings().llm_model,
-        "messages": messages,
-        "temperature": temperature,
-    }
+
+    model = get_settings().llm_model
+    payload: dict = {"model": model, "messages": messages, "temperature": temperature}
     if tools:
         payload["tools"] = tools
+
+    t0 = time.perf_counter()
     data = await _post(payload)
+    usage = data.get("usage") or {}
+    tracing.record_span(
+        "llm.chat",
+        (time.perf_counter() - t0) * 1000.0,
+        model=model,
+        prompt_tokens=usage.get("prompt_tokens", 0),
+        completion_tokens=usage.get("completion_tokens", 0),
+    )
     return data["choices"][0]["message"]
 
 
