@@ -37,6 +37,7 @@ async def execute_step(
 ) -> str:
     """Run a single step via the tool-use loop with its worker prompt."""
     system = AGENT_PROMPTS.get(step.get("agent", "research"), AGENT_PROMPTS["research"])
+    system += " Respond in plain text only — no LaTeX, markdown math, or code fences."
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": step.get("description", "")},
