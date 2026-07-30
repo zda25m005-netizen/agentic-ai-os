@@ -97,7 +97,9 @@ Adding a tool is ~40 lines: an async function + a `@tool` decorator with a JSON 
 
 **Built:** FastAPI · Qdrant · hybrid retrieval (dense + BM25 + RRF + LLM reranker) · LangGraph agents · function-calling tool loop · pytest/CI · Docker Compose (Qdrant).
 
-**Designed / roadmap (not yet built):** Neo4j knowledge graph · LoRA fine-tuning + DPO preference tuning · a feedback-driven reranker · Postgres-backed long-term memory · Prometheus/Grafana + Langfuse observability · Kubernetes/Helm deploy · Next.js frontend. These are scoped in [docs/DESIGN.md](docs/DESIGN.md) as design, not claimed as complete.
+**In progress:** Neo4j knowledge graph / GraphRAG — client + infra landed (`app/graph/`, Neo4j service in compose); entity extraction, ingest, and fused graph retrieval building this week. Design in [docs/DESIGN.md](docs/DESIGN.md) §9.
+
+**Designed / roadmap (not yet built):** LoRA fine-tuning + DPO preference tuning · a feedback-driven reranker · Postgres-backed long-term memory · Prometheus/Grafana + Langfuse observability · Kubernetes/Helm deploy. These are scoped in [docs/DESIGN.md](docs/DESIGN.md) as design, not claimed as complete.
 
 ## Run the whole stack (Docker)
 

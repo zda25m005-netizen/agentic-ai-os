@@ -134,5 +134,30 @@ Rationale: depth + proof beats a broad, shallow feature checklist for senior rev
 - Cost control on multi-step runs — enforce token budgets + caching.
 - Fine-tune task selection — must show a *clear* measurable win.
 
+## 9. GraphRAG (knowledge graph) — in progress
+
+**Why.** Dense + BM25 retrieval finds *similar text*, but can't answer
+relational questions ("which projects share a dependency?", "who reports to
+whom, two hops up?"). A knowledge graph makes entities and their relationships
+first-class, so those queries become graph traversals instead of guesswork.
+
+**Store.** Neo4j (community), reached over the Bolt protocol. A thin
+`app/graph/client.py` wrapper mirrors the Qdrant wrapper: a cached, pooled
+driver (the driver owns its own connection pool), a `graph_session` context
+manager that always closes, and a `run_query` helper that returns plain dicts.
+Config lives in `Settings` (`neo4j_uri/user/password`); tests monkeypatch the
+driver so no live DB is needed in CI.
+
+**Model (building this week).** Nodes: `Entity {name, type}` and `Chunk {id}`.
+Edges: typed `RELATION` triples between entities, plus `MENTIONED_IN` linking an
+entity back to its source chunk (so graph answers stay citable). Extraction is
+LLM-based (entities, then subject–predicate–object relations), deduped and
+normalized before `MERGE` (idempotent ingest).
+
+**Retrieval.** Match query entities → pull their k-hop neighborhood → serialize
+the subgraph to text context → fuse with hybrid RAG via RRF. Exposed as a
+`graph_search` tool and an `/ask?mode=graph|hybrid|fused` switch, with a small
+graph-QA eval set to prove fused beats either alone on relational questions.
+
 ---
-*v0 — Day 2. Next update: after RAG lands (Week 3).*
+*v1 — GraphRAG design added (Week 1, Day 1). Next update: after graph ingest + retrieval land.*
