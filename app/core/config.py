@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     # Vector DB
     qdrant_url: str = Field(default="http://localhost:6333")
 
+    # Graph DB (Neo4j)
+    neo4j_uri: str = Field(default="bolt://localhost:7687")
+    neo4j_user: str = Field(default="neo4j")
+    neo4j_password: str = Field(default="neo4jpassword")
+
     # Postgres
     postgres_dsn: str = Field(default="postgresql://postgres:postgres@localhost:5432/agentic")
 
