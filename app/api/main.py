@@ -1,9 +1,11 @@
 """FastAPI entrypoint. Endpoints grow through the roadmap."""
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
 from app.agents.graph import run_agent
-from app.core import llm
+from app.core import auth, llm
 from app.core.config import get_settings
 from app.obs import tracing
 from app.rag import citations, retriever, vectorstore
@@ -11,6 +13,13 @@ from app.rag import citations, retriever, vectorstore
 settings = get_settings()
 
 app = FastAPI(title="Enterprise Agentic AI OS", version="0.1.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class ChatRequest(BaseModel):
@@ -72,6 +81,67 @@ class AgentResponse(BaseModel):
     steps: list[AgentStepOut]
     trace: list[str]
     metrics: Metrics
+
+
+class TokenRequest(BaseModel):
+    username: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    role: str
+
+
+_bearer = HTTPBearer(auto_error=True)
+
+
+def current_user(
+    creds: HTTPAuthorizationCredentials = Depends(_bearer),  # noqa: B008
+) -> dict:
+    """Decode the bearer token; raise 401 if missing/invalid/expired."""
+    try:
+        return auth.decode_token(creds.credentials)
+    except auth.AuthError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+
+def require_role(role: str):
+    """Dependency factory: require the caller to have a specific role."""
+
+    def checker(user: dict = Depends(current_user)) -> dict:  # noqa: B008
+        if user.get("role") != role:
+            raise HTTPException(status_code=403, detail=f"requires {role} role")
+        return user
+
+    return checker
+
+
+_require_admin = require_role("admin")
+
+
+@app.post("/token", response_model=TokenResponse)
+def token(req: TokenRequest) -> TokenResponse:
+    """Exchange username/password for a signed JWT."""
+    role = auth.verify_credentials(req.username, req.password)
+    if role is None:
+        raise HTTPException(status_code=401, detail="invalid credentials")
+    return TokenResponse(
+        access_token=auth.create_access_token(req.username, role=role), role=role
+    )
+
+
+@app.get("/me")
+def me(user: dict = Depends(current_user)) -> dict:  # noqa: B008
+    """Return the authenticated user (requires a valid token)."""
+    return {"username": user.get("sub"), "role": user.get("role")}
+
+
+@app.get("/admin/stats")
+def admin_stats(user: dict = Depends(_require_admin)) -> dict:  # noqa: B008
+    """Admin-only example endpoint (RBAC)."""
+    return {"ok": True, "viewer": user.get("sub"), "note": "admin-only data"}
 
 
 @app.get("/health")

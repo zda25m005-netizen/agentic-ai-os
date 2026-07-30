@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     # App
     app_env: str = Field(default="dev")
     log_level: str = Field(default="INFO")
+    jwt_secret: str = Field(default="")
 
     # LLM
     openai_api_key: str = Field(default="")
