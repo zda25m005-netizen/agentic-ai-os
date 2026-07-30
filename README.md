@@ -16,6 +16,14 @@ Two working systems, both benchmarked: a hybrid-RAG engine that answers question
 - **Multi-agent orchestrator** — Planner → Executor → Critic graph (LangGraph) with a bounded retry loop and a **function-calling tool-use loop** across 11 tools. *Measured: 100% task success on multi-step goals.*
 - **Evaluation harness** — labeled datasets, automated scorers (recall, LLM-judge correctness, citation accuracy), and a **retrieval ablation** comparing strategies. One command: `make eval`, `make ablation`.
 
+## Demo
+
+The agent plans a goal, calls a tool, self-critiques, and reports its own latency and cost — and hybrid RAG returns a grounded answer with citations.
+
+| Multi-agent + tools (`/agent`) | Hybrid RAG + citations (`/ask`) |
+|---|---|
+| ![Agent demo](docs/images/agent-demo.png) | ![RAG demo](docs/images/rag-demo.png) |
+
 ## Evaluation
 
 Everything below is reproducible from the repo.
