@@ -9,6 +9,19 @@ services:
       - qdrant_storage:/qdrant/storage
     restart: unless-stopped
 
+  neo4j:
+    image: neo4j:5-community
+    container_name: agentic-neo4j
+    ports:
+      - "7474:7474"   # HTTP browser
+      - "7687:7687"   # Bolt driver
+    environment:
+      # Format is NEO4J_AUTH=user/password. Override in .env for anything real.
+      - NEO4J_AUTH=neo4j/neo4jpassword
+    volumes:
+      - neo4j_storage:/data
+    restart: unless-stopped
+
   api:
     build: .
     container_name: agentic-api
@@ -17,10 +30,12 @@ services:
     env_file:
       - .env
     environment:
-      # Inside the compose network the vector DB is reachable by service name.
+      # Inside the compose network the datastores are reachable by service name.
       - QDRANT_URL=http://qdrant:6333
+      - NEO4J_URI=bolt://neo4j:7687
     depends_on:
       - qdrant
+      - neo4j
     restart: unless-stopped
 
   web:
@@ -36,3 +51,4 @@ services:
 
 volumes:
   qdrant_storage:
+  neo4j_storage:
