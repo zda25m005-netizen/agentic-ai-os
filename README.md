@@ -99,6 +99,14 @@ Adding a tool is ~40 lines: an async function + a `@tool` decorator with a JSON 
 
 **Designed / roadmap (not yet built):** Neo4j knowledge graph · LoRA fine-tuning + DPO preference tuning · a feedback-driven reranker · Postgres-backed long-term memory · Prometheus/Grafana + Langfuse observability · Kubernetes/Helm deploy · Next.js frontend. These are scoped in [docs/DESIGN.md](docs/DESIGN.md) as design, not claimed as complete.
 
+## Run the whole stack (Docker)
+
+```bash
+cp .env.example .env    # add OPENAI_API_KEY
+docker compose up --build
+# API on :8000, UI on :3000, Qdrant on :6333
+```
+
 ## Quickstart
 
 ```bash
