@@ -148,11 +148,16 @@ manager that always closes, and a `run_query` helper that returns plain dicts.
 Config lives in `Settings` (`neo4j_uri/user/password`); tests monkeypatch the
 driver so no live DB is needed in CI.
 
-**Model (building this week).** Nodes: `Entity {name, type}` and `Chunk {id}`.
-Edges: typed `RELATION` triples between entities, plus `MENTIONED_IN` linking an
-entity back to its source chunk (so graph answers stay citable). Extraction is
-LLM-based (entities, then subject–predicate–object relations), deduped and
-normalized before `MERGE` (idempotent ingest).
+**Model.** Nodes: `Entity {name, type}` and `Chunk {id}`. Edges: typed
+`RELATION` triples between entities, plus `MENTIONED_IN` linking an entity back
+to its source chunk (so graph answers stay citable).
+
+**Extraction (built).** Two LLM passes over a chunk — entities first, then
+subject–predicate–object relations *between those entities* (`app/graph/
+extract.py`). Names are normalized and deduped (`normalize.py`), relations whose
+endpoints aren't known entities are dropped, and malformed LLM output parses to
+an empty list rather than crashing. `chat_fn` is injectable, so the whole path
+is unit-tested with a fake LLM. Next: MERGE these into Neo4j (idempotent ingest).
 
 **Retrieval.** Match query entities → pull their k-hop neighborhood → serialize
 the subgraph to text context → fuse with hybrid RAG via RRF. Exposed as a
