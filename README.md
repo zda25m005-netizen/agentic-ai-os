@@ -106,7 +106,18 @@ Adding a tool is ~40 lines: an async function + a `@tool` decorator with a JSON 
 ```bash
 cp .env.example .env    # add OPENAI_API_KEY
 docker compose up --build
-# API on :8000, UI on :3000, Qdrant on :6333
+# API on :8000, UI on :3000, Qdrant on :6333, Neo4j on :7474/:7687
+```
+
+## Build the knowledge graph
+
+With Neo4j running and an LLM configured, extract entities/relations from the
+corpus and MERGE them into the graph (idempotent — safe to re-run):
+
+```bash
+docker compose up -d neo4j
+python -m app.graph.cli --corpus eval/datasets/corpus.json
+# Browse the graph at http://localhost:7474 (neo4j / neo4jpassword)
 ```
 
 ## Quickstart
