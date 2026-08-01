@@ -30,7 +30,23 @@ MERGE_RELATION = (
     "MERGE (s)-[:RELATION {predicate: $predicate}]->(o)"
 )
 
+# Schema/perf setup — run once before ingest. Idempotent (IF NOT EXISTS).
+# The name index makes entity lookups (seed matching in retrieval) fast.
+SCHEMA_STATEMENTS = [
+    "CREATE INDEX entity_name IF NOT EXISTS FOR (e:Entity) ON (e.name)",
+    "CREATE CONSTRAINT chunk_id_unique IF NOT EXISTS "
+    "FOR (c:Chunk) REQUIRE c.id IS UNIQUE",
+]
+
 ExtractFn = Callable[[str], Awaitable[GraphExtraction]]
+
+
+def ensure_graph_schema(driver=None) -> int:
+    """Create the entity-name index and chunk-id constraint (idempotent)."""
+    with graph_session(driver) as session:
+        for stmt in SCHEMA_STATEMENTS:
+            session.run(stmt, {})
+    return len(SCHEMA_STATEMENTS)
 
 
 @dataclass
