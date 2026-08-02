@@ -8,6 +8,7 @@ from app.tools import (  # noqa: F401
     clock,
     data_analysis,
     file_ops,
+    graph_search,
     http_tool,
     python_exec,
     rag_search,

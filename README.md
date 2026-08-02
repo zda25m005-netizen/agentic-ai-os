@@ -78,9 +78,9 @@ flowchart TB
 
 Full diagrams in [docs/architecture.md](docs/architecture.md) · design & trade-offs in [docs/DESIGN.md](docs/DESIGN.md).
 
-## Tools (11, all tested)
+## Tools (12, all tested)
 
-`calculator` · `web_search` · `python_exec` (sandboxed) · `sql_query` (read-only) · `rag_search` · `current_datetime` · `http_get` (SSRF-guarded) · `wikipedia` · `file_read/write/list` (path-traversal guarded) · `analyze_csv` (pandas) · `delegate` (recursive sub-agent).
+`calculator` · `web_search` · `python_exec` (sandboxed) · `sql_query` (read-only) · `rag_search` · `graph_search` (knowledge graph) · `current_datetime` · `http_get` (SSRF-guarded) · `wikipedia` · `file_read/write/list` (path-traversal guarded) · `analyze_csv` (pandas) · `delegate` (recursive sub-agent).
 
 Adding a tool is ~40 lines: an async function + a `@tool` decorator with a JSON schema. The registry exposes them as OpenAI function-calling specs; the agent picks and invokes them autonomously.
 
