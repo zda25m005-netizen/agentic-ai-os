@@ -7,6 +7,8 @@ from pydantic import BaseModel
 from app.agents.graph import run_agent
 from app.core import auth, llm
 from app.core.config import get_settings
+from app.graph import fusion
+from app.graph.retrieval import get_graph_context, graph_chunk_hits
 from app.obs import tracing
 from app.rag import citations, retriever, vectorstore
 
@@ -49,6 +51,7 @@ class AskRequest(BaseModel):
     question: str
     collection: str = retriever.DEFAULT_COLLECTION
     top_k: int = 5
+    mode: str = "vector"  # vector | graph | fused (GraphRAG)
 
 
 class AskResponse(BaseModel):
@@ -192,10 +195,42 @@ async def ask(req: AskRequest) -> AskResponse:
             detail="LLM not configured. Set OPENAI_API_KEY or LLM_BASE_URL in .env",
         )
 
+    # Graph-only mode: answer purely from knowledge-graph facts.
+    if req.mode == "graph":
+        try:
+            gctx = await get_graph_context(req.question)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(502, f"Knowledge graph unavailable: {exc}") from exc
+        if not gctx.triples:
+            return AskResponse(
+                answer="I don't know — no related facts found in the knowledge graph.",
+                citations=[],
+                sources=[],
+            )
+        try:
+            answer = await llm.chat(
+                fusion.build_graphrag_messages(req.question, [], gctx.text)
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(502, f"LLM call failed: {exc}") from exc
+        return AskResponse(answer=answer, citations=[], sources=[])
+
     client = vectorstore.get_client()
     hits = await retriever.retrieve(
         req.question, client, collection=req.collection, limit=req.top_k
     )
+
+    # Fused (GraphRAG) mode: RRF-merge graph chunk hits with the vector hits and
+    # prepend graph facts. Degrades to plain vector answer if the graph is down.
+    graph_text = ""
+    if req.mode == "fused":
+        try:
+            graph_text = (await get_graph_context(req.question)).text
+            ghits = await graph_chunk_hits(req.question, limit=req.top_k * 2)
+            hits = fusion.fuse_hits(hits, ghits, limit=req.top_k)
+        except Exception:  # noqa: BLE001
+            graph_text = ""
+
     if not hits:
         return AskResponse(
             answer="I don't know — no relevant documents found.",
@@ -203,7 +238,11 @@ async def ask(req: AskRequest) -> AskResponse:
             sources=[],
         )
 
-    messages = citations.build_messages(req.question, hits)
+    messages = (
+        fusion.build_graphrag_messages(req.question, hits, graph_text)
+        if req.mode == "fused"
+        else citations.build_messages(req.question, hits)
+    )
     try:
         answer = await llm.chat(messages)
     except Exception as exc:  # noqa: BLE001
