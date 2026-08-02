@@ -15,11 +15,20 @@ from dataclasses import dataclass, field
 from app.graph.client import run_query
 from app.graph.extract import extract_entities
 from app.graph.schema import Entity
+from app.rag.vectorstore import SearchHit
 
 # Callable that maps query text -> entities (defaults to the LLM extractor).
 ExtractEntitiesFn = Callable[[str], Awaitable[list[Entity]]]
 
 MAX_HOPS = 3
+
+# Rank source chunks by how many query-entities they mention (via MENTIONED_IN).
+CHUNK_HITS_QUERY = (
+    "MATCH (e:Entity) WHERE toLower(e.name) IN $names "
+    "MATCH (e)-[:MENTIONED_IN]->(c:Chunk) "
+    "RETURN c.id AS source, count(DISTINCT e) AS mentions "
+    "ORDER BY mentions DESC LIMIT $limit"
+)
 
 
 @dataclass
@@ -80,3 +89,29 @@ async def get_graph_context(
         if r.get("subject") and r.get("object")
     ]
     return GraphContext(triples=triples, text=serialize_triples(triples))
+
+
+async def graph_chunk_hits(
+    query: str,
+    driver=None,
+    limit: int = 10,
+    extract_fn: ExtractEntitiesFn | None = None,
+) -> list[SearchHit]:
+    """Return source chunks ranked by query-entity mentions, as SearchHits.
+
+    This is the graph's own "retrieval" over documents: chunks that mention the
+    entities named in the query. Keyed by source so it can be RRF-fused with the
+    vector/BM25 hit lists (which also carry a source).
+    """
+    extract_fn = extract_fn or extract_entities
+    entities = await extract_fn(query)
+    names = [e.name.casefold() for e in entities]
+    if not names:
+        return []
+    rows = run_query(CHUNK_HITS_QUERY, {"names": names, "limit": limit}, driver)
+    return [
+        SearchHit(id=r["source"], score=float(r["mentions"]),
+                  payload={"source": r["source"]})
+        for r in rows
+        if r.get("source")
+    ]
