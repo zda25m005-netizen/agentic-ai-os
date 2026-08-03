@@ -1,4 +1,4 @@
-.PHONY: install run lint fmt test eval clean
+.PHONY: install run lint fmt test eval ablation graph-eval clean
 
 install:
 	pip install -e ".[dev]"
@@ -22,6 +22,9 @@ eval:
 
 ablation:
 	python -m eval.ablation
+
+graph-eval:
+	python -m eval.graph_eval
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
