@@ -1,0 +1,38 @@
+[
+  {
+    "id": "g1",
+    "question": "What product did Acme Corp ship to the Berlin warehouse?",
+    "expected_facts": ["SKU-4471", "Berlin"],
+    "relational": true
+  },
+  {
+    "id": "g2",
+    "question": "Which region led Acme Corp's Q3 revenue growth?",
+    "expected_facts": ["APAC"],
+    "relational": true
+  },
+  {
+    "id": "g3",
+    "question": "How are Acme Corp and SKU-4471 connected?",
+    "expected_facts": ["SKU-4471", "shipped"],
+    "relational": true
+  },
+  {
+    "id": "g4",
+    "question": "How many days of paid annual leave are employees entitled to?",
+    "expected_facts": ["25"],
+    "relational": false
+  },
+  {
+    "id": "g5",
+    "question": "What is the relationship between Acme Corp and the APAC region?",
+    "expected_facts": ["APAC", "revenue"],
+    "relational": true
+  },
+  {
+    "id": "g6",
+    "question": "Which warehouse received the shipment from Acme Corp?",
+    "expected_facts": ["Berlin"],
+    "relational": true
+  }
+]
