@@ -14,6 +14,7 @@ from collections.abc import Awaitable, Callable
 
 from app.agents.state import AgentState, Step
 from app.core import llm
+from app.graph.routing import GRAPH_HINT, is_relational_goal
 from app.memory.manager import MemoryManager, get_memory
 
 WORKER_TYPES = ("research", "coding", "sql", "browser")
@@ -24,7 +25,9 @@ _PLANNER_SYSTEM = (
     "You are a planning agent. Break the user's goal into a short ordered "
     "list of concrete steps. Reply with ONLY a JSON array; each element is "
     '{"description": str, "agent": one of ["research","coding","sql","browser"]}. '
-    "Use the fewest steps that fully accomplish the goal. No prose."
+    "For relational or multi-hop questions, write research steps that use the "
+    "knowledge graph (graph_search). Use the fewest steps that fully "
+    "accomplish the goal. No prose."
 )
 
 _JSON_ARRAY_RE = re.compile(r"\[.*\]", re.DOTALL)
@@ -61,13 +64,18 @@ def parse_plan(raw: str, goal: str) -> list[Step]:
 
 
 async def plan_goal(
-    goal: str, chat_fn: ChatFn | None = None, memory_context: str = ""
+    goal: str,
+    chat_fn: ChatFn | None = None,
+    memory_context: str = "",
+    extra_hint: str = "",
 ) -> list[Step]:
-    """Produce a plan for the goal, optionally with recalled memory context."""
+    """Produce a plan for the goal, optionally with recalled memory + a hint."""
     chat_fn = chat_fn or llm.chat
     user = f"Goal: {goal}"
     if memory_context:
         user += f"\n\n{memory_context}\n(Reuse relevant past work if helpful.)"
+    if extra_hint:
+        user += f"\n\n{extra_hint}"
     messages = [
         {"role": "system", "content": _PLANNER_SYSTEM},
         {"role": "user", "content": user},
@@ -91,6 +99,13 @@ async def planner_node(state: AgentState) -> AgentState:
                 {"node": "planner", "content": f"recalled {len(hits)} past run(s)"}
             )
 
-    plan = await plan_goal(goal, memory_context=memory_context)
+    extra_hint = ""
+    if is_relational_goal(goal):
+        extra_hint = GRAPH_HINT
+        scratchpad.append(
+            {"node": "planner", "content": "relational goal → routing to graph_search"}
+        )
+
+    plan = await plan_goal(goal, memory_context=memory_context, extra_hint=extra_hint)
     scratchpad.append({"node": "planner", "content": f"planned {len(plan)} step(s)"})
     return {"plan": plan, "cursor": 0, "scratchpad": scratchpad}
