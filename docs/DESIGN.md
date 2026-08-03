@@ -159,10 +159,27 @@ endpoints aren't known entities are dropped, and malformed LLM output parses to
 an empty list rather than crashing. `chat_fn` is injectable, so the whole path
 is unit-tested with a fake LLM. Next: MERGE these into Neo4j (idempotent ingest).
 
-**Retrieval.** Match query entities → pull their k-hop neighborhood → serialize
-the subgraph to text context → fuse with hybrid RAG via RRF. Exposed as a
-`graph_search` tool and an `/ask?mode=graph|hybrid|fused` switch, with a small
-graph-QA eval set to prove fused beats either alone on relational questions.
+**Retrieval (built).** Match query entities → pull their k-hop neighborhood →
+serialize the subgraph to text. In parallel, chunks are ranked by how many
+query-entities they mention, and that ranking is RRF-fused with the vector/BM25
+hits (keyed by source). The fused prompt puts graph facts above passages.
+Exposed as a `graph_search` tool and an `/ask?mode=vector|graph|fused` switch.
+
+**Evaluation & routing (built).** `make graph-eval` scores answers by
+fact-coverage over a graph-QA set (`eval/datasets/graph_qa.json`). A cheap
+relational-goal heuristic (`app/graph/routing.py`) detects relationship/
+multi-hop phrasing and injects a hint so the planner steers the executor toward
+`graph_search`. Coverage numbers depend on a live graph + LLM; the harness and
+routing are unit-tested offline with fakes.
+
+| GraphRAG piece | Status | Proof |
+|---|---|---|
+| Entity/relation extraction | built | `test_graph_extract.py` |
+| Idempotent ingest (MERGE + chunk links) | built | `test_graph_ingest.py` |
+| k-hop retrieval + serialization | built | `test_graph_retrieval.py` |
+| RRF fusion (RAG + graph) | built | `test_graph_fusion.py` |
+| `graph_search` tool + `/ask` modes | built | `test_graph_fusion.py` |
+| Eval harness + relational routing | built | `test_graph_routing_eval.py` |
 
 ---
-*v1 — GraphRAG design added (Week 1, Day 1). Next update: after graph ingest + retrieval land.*
+*v2 — GraphRAG complete (Week 1). Next: Postgres memory + feedback reranker (Week 2).*
