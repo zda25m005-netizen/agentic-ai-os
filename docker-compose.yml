@@ -22,6 +22,19 @@ services:
       - neo4j_storage:/data
     restart: unless-stopped
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: agentic-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=agentic
+    volumes:
+      - postgres_storage:/var/lib/postgresql/data
+    restart: unless-stopped
+
   api:
     build: .
     container_name: agentic-api
@@ -33,9 +46,11 @@ services:
       # Inside the compose network the datastores are reachable by service name.
       - QDRANT_URL=http://qdrant:6333
       - NEO4J_URI=bolt://neo4j:7687
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/agentic
     depends_on:
       - qdrant
       - neo4j
+      - postgres
     restart: unless-stopped
 
   web:
@@ -52,3 +67,4 @@ services:
 volumes:
   qdrant_storage:
   neo4j_storage:
+  postgres_storage:
