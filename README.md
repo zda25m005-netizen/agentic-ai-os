@@ -109,6 +109,18 @@ docker compose up --build
 # API on :8000, UI on :3000, Qdrant on :6333, Neo4j on :7474/:7687
 ```
 
+## Database (Postgres)
+
+Long-term memory is moving to Postgres via async SQLAlchemy 2.0 (asyncpg).
+Config is a single `DATABASE_URL` (note the `+asyncpg` driver). Compose brings up
+a `postgres` service automatically; tests run against in-memory SQLite (aiosqlite),
+so no live database is needed in CI.
+
+```bash
+docker compose up -d postgres
+# DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/agentic
+```
+
 ## Build the knowledge graph
 
 With Neo4j running and an LLM configured, extract entities/relations from the
