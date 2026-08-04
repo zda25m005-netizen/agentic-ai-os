@@ -34,8 +34,10 @@ class Settings(BaseSettings):
     neo4j_user: str = Field(default="neo4j")
     neo4j_password: str = Field(default="neo4jpassword")
 
-    # Postgres
-    postgres_dsn: str = Field(default="postgresql://postgres:postgres@localhost:5432/agentic")
+    # Postgres (async SQLAlchemy — note the +asyncpg driver)
+    database_url: str = Field(
+        default="postgresql+asyncpg://postgres:postgres@localhost:5432/agentic"
+    )
 
 
 @lru_cache
