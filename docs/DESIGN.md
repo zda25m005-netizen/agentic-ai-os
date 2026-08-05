@@ -181,5 +181,27 @@ routing are unit-tested offline with fakes.
 | `graph_search` tool + `/ask` modes | built | `test_graph_fusion.py` |
 | Eval harness + relational routing | built | `test_graph_routing_eval.py` |
 
+## 10. Feedback loop (learning from users) — in progress
+
+The "learn from feedback" component is scoped as **DPO + a feedback-driven
+reranker**, not RLHF — a tractable, defensible design.
+
+**Collection (built).** Every answer card has 👍 / 👎 buttons; a 👎 can include
+a suggested better answer. `POST /feedback` persists a row (`app/feedback/`):
+`{run_id?, query, answer, rating, better_answer?, ts}` via async SQLAlchemy, so
+it works on SQLite (dev) or Postgres (prod). The endpoint validates the rating
+and is unit-tested with a faked store; the store is tested on in-memory SQLite.
+
+**Use (building this week).**
+- *Reranker signal:* 👍/👎 on answers whose passages are known become
+  (query, passage, label) pairs to train a lightweight learned reranker that
+  augments the current LLM reranker (cold-start falls back to the LLM).
+- *DPO pairs:* a 👎 with a `better_answer` gives a (chosen, rejected) pair;
+  a 👍 answer can be the chosen against a weaker candidate. Exported as JSONL
+  for offline preference tuning (Week 4).
+
+Everything is measured: reranker-on vs -off enters the ablation table, so the
+loop has to *demonstrate* a win, not just exist.
+
 ---
-*v2 — GraphRAG complete (Week 1). Next: Postgres memory + feedback reranker (Week 2).*
+*v3 — feedback collection built (Week 2, Day 9). Next: feedback reranker + DPO export.*
