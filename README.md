@@ -111,7 +111,9 @@ docker compose up --build
 
 ## Database (Postgres)
 
-Long-term memory is moving to Postgres via async SQLAlchemy 2.0 (asyncpg).
+Episodic long-term memory runs on either backend, chosen by `MEMORY_BACKEND`:
+`sqlite` (default, zero-setup) or `postgres` (async SQLAlchemy 2.0 + asyncpg).
+The Postgres store implements the same interface, so nothing else changes.
 Config is a single `DATABASE_URL` (note the `+asyncpg` driver). Compose brings up
 a `postgres` service automatically; tests run against in-memory SQLite (aiosqlite),
 so no live database is needed in CI.
@@ -119,6 +121,7 @@ so no live database is needed in CI.
 ```bash
 docker compose up -d postgres
 # DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/agentic
+# MEMORY_BACKEND=postgres
 ```
 
 ## Build the knowledge graph
