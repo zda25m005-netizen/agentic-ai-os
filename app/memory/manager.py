@@ -8,6 +8,8 @@ settable for tests.
 """
 from __future__ import annotations
 
+import inspect
+
 from app.memory.episodic import EpisodicMemory
 from app.memory.semantic import MemoryHit, SemanticMemory
 
@@ -20,7 +22,10 @@ class MemoryManager:
         self.semantic = semantic
 
     async def remember(self, goal: str, answer: str) -> None:
-        self.episodic.save(goal, answer)
+        # Episodic backend may be sync (SQLite) or async (Postgres); support both.
+        result = self.episodic.save(goal, answer)
+        if inspect.isawaitable(result):
+            await result
         await self.semantic.add(goal, answer)
 
     async def recall(self, query: str, limit: int = 3) -> list[MemoryHit]:

@@ -39,6 +39,9 @@ class Settings(BaseSettings):
         default="postgresql+asyncpg://postgres:postgres@localhost:5432/agentic"
     )
 
+    # Long-term memory backend: "sqlite" (default) or "postgres"
+    memory_backend: str = Field(default="sqlite")
+
 
 @lru_cache
 def get_settings() -> Settings:
