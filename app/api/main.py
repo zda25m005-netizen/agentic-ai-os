@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from app.agents.graph import run_agent
 from app.core import auth, llm
 from app.core.config import get_settings
+from app.feedback import store as feedback_store
 from app.graph import fusion
 from app.graph.retrieval import get_graph_context, graph_chunk_hits
 from app.obs import tracing
@@ -84,6 +85,19 @@ class AgentResponse(BaseModel):
     steps: list[AgentStepOut]
     trace: list[str]
     metrics: Metrics
+
+
+class FeedbackRequest(BaseModel):
+    query: str
+    answer: str
+    rating: str  # "up" | "down"
+    run_id: str | None = None
+    better_answer: str | None = None
+
+
+class FeedbackResponse(BaseModel):
+    id: int
+    status: str = "recorded"
 
 
 class TokenRequest(BaseModel):
@@ -267,6 +281,24 @@ async def ask(req: AskRequest) -> AskResponse:
         for h in hits
     ]
     return AskResponse(answer=answer, citations=citation_out, sources=sources)
+
+
+@app.post("/feedback", response_model=FeedbackResponse)
+async def feedback(req: FeedbackRequest) -> FeedbackResponse:
+    """Record a thumbs up/down (and optional better answer) on an answer."""
+    if req.rating not in feedback_store.VALID_RATINGS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"rating must be one of {feedback_store.VALID_RATINGS}",
+        )
+    try:
+        fid = await feedback_store.record(
+            req.query, req.answer, req.rating,
+            run_id=req.run_id, better_answer=req.better_answer,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(500, f"could not save feedback: {exc}") from exc
+    return FeedbackResponse(id=fid)
 
 
 @app.post("/agent", response_model=AgentResponse)
