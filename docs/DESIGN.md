@@ -203,5 +203,18 @@ and is unit-tested with a faked store; the store is tested on in-memory SQLite.
 Everything is measured: reranker-on vs -off enters the ablation table, so the
 loop has to *demonstrate* a win, not just exist.
 
+**Feedback reranker (built).** `app/rag/feedback_reranker.py` learns a logistic
+regression over cheap lexical features (query-term coverage, Jaccard, passage
+length) from (query, passage, label) pairs, where a 👍/👎 labels the passages
+retrieved for that query. It's a drop-in for the LLM reranker (`rerank(query,
+hits)`), and **falls back to the LLM reranker whenever it's cold** (too few
+pairs or a single class) — so quality never regresses while data accumulates.
+
+*Why so small:* it's dependency-free, deterministic, and unit-testable with no
+model download or API call. *Limits:* lexical features only (no semantics yet —
+an embedding-cosine feature is the obvious next lever); labels are noisy because
+feedback is answer-level, propagated to passages; needs volume to beat the LLM
+reranker. The win/regression is measured directly in the ablation table (Day 12).
+
 ---
-*v3 — feedback collection built (Week 2, Day 9). Next: feedback reranker + DPO export.*
+*v4 — feedback reranker built (Week 2, Day 10). Next: DPO pair export + eval.*
