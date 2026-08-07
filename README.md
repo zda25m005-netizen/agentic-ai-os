@@ -92,6 +92,24 @@ Adding a tool is ~40 lines: an async function + a `@tool` decorator with a JSON 
 | POST | `/chat` | Single-turn chat |
 | POST | `/ask` | Hybrid RAG with inline citations |
 | POST | `/agent` | Multi-agent: plan → tool use → critique → answer |
+| POST | `/feedback` | Record 👍/👎 (+ optional better answer) on an answer |
+| GET | `/metrics` | Prometheus scrape endpoint |
+
+## Metrics (Prometheus)
+
+`GET /metrics` exposes process-wide counters/histograms for scraping:
+
+| Metric | Type | Labels | Meaning |
+|---|---|---|---|
+| `agentic_requests_total` | counter | endpoint, method, status | HTTP requests |
+| `agentic_request_latency_seconds` | histogram | endpoint | request latency |
+| `agentic_llm_tokens_total` | counter | type (prompt/completion) | LLM tokens used |
+| `agentic_llm_cost_usd_total` | counter | — | estimated LLM spend |
+| `agentic_agent_node_runs_total` | counter | node | planner/executor/critic/finalize runs |
+| `agentic_tool_calls_total` | counter | tool | tool invocations |
+
+A request-timing middleware records the HTTP series; token/cost are emitted from
+the LLM client; node/tool counters from the agent graph and tool registry.
 
 ## Tech stack
 
