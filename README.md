@@ -111,6 +111,15 @@ Adding a tool is ~40 lines: an async function + a `@tool` decorator with a JSON 
 A request-timing middleware records the HTTP series; token/cost are emitted from
 the LLM client; node/tool counters from the agent graph and tool registry.
 
+Compose ships a full monitoring stack: **Prometheus** scrapes `/metrics`, and
+**Grafana** comes pre-provisioned with Prometheus as its default datasource.
+
+```bash
+docker compose up -d prometheus grafana
+# Prometheus  → http://localhost:9090   (targets: api:8000/metrics)
+# Grafana     → http://localhost:3001   (admin / admin)
+```
+
 ## Tech stack
 
 **Built:** FastAPI · Qdrant · hybrid retrieval (dense + BM25 + RRF + LLM reranker) · Neo4j GraphRAG (entity/relation extraction, k-hop retrieval, RRF fusion, `graph_search` tool, `/ask?mode=graph|fused`) · LangGraph agents · function-calling tool loop · pytest/CI · Docker Compose.
