@@ -1,4 +1,4 @@
-.PHONY: install run lint fmt test eval ablation graph-eval clean
+.PHONY: install run lint fmt test eval ablation graph-eval dpo-export clean
 
 install:
 	pip install -e ".[dev]"
@@ -25,6 +25,9 @@ ablation:
 
 graph-eval:
 	python -m eval.graph_eval
+
+dpo-export:
+	python -m app.feedback.dpo_cli
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
