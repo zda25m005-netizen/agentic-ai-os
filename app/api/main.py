@@ -1,5 +1,7 @@
 """FastAPI entrypoint. Endpoints grow through the roadmap."""
-from fastapi import Depends, FastAPI, HTTPException
+import time
+
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
@@ -10,6 +12,7 @@ from app.core.config import get_settings
 from app.feedback import store as feedback_store
 from app.graph import fusion
 from app.graph.retrieval import get_graph_context, graph_chunk_hits
+from app.obs import metrics as obs_metrics
 from app.obs import tracing
 from app.rag import citations, retriever, vectorstore
 
@@ -23,6 +26,25 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def _metrics_middleware(request: Request, call_next):
+    """Count every request and record its latency (Prometheus)."""
+    t0 = time.perf_counter()
+    response = await call_next(request)
+    obs_metrics.observe_request(
+        request.url.path, request.method, response.status_code,
+        time.perf_counter() - t0,
+    )
+    return response
+
+
+@app.get("/metrics")
+def metrics_endpoint() -> Response:
+    """Prometheus scrape endpoint."""
+    payload, content_type = obs_metrics.render()
+    return Response(content=payload, media_type=content_type)
 
 
 class ChatRequest(BaseModel):

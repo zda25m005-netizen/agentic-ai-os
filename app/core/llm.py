@@ -11,7 +11,7 @@ import time
 import httpx
 
 from app.core.config import get_settings
-from app.obs import tracing
+from app.obs import metrics, tracing
 
 
 class LLMNotConfigured(RuntimeError):
@@ -58,13 +58,17 @@ async def chat_raw(
     t0 = time.perf_counter()
     data = await _post(payload)
     usage = data.get("usage") or {}
+    prompt_tokens = usage.get("prompt_tokens", 0)
+    completion_tokens = usage.get("completion_tokens", 0)
     tracing.record_span(
         "llm.chat",
         (time.perf_counter() - t0) * 1000.0,
         model=model,
-        prompt_tokens=usage.get("prompt_tokens", 0),
-        completion_tokens=usage.get("completion_tokens", 0),
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
     )
+    metrics.record_tokens(prompt_tokens, completion_tokens)
+    metrics.record_cost(tracing.estimate_cost(model, prompt_tokens, completion_tokens))
     return data["choices"][0]["message"]
 
 
