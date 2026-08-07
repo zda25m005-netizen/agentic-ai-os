@@ -17,6 +17,17 @@ from app.agents.executor import executor_node, is_done
 from app.agents.planner import planner_node
 from app.agents.state import AgentState, new_state
 from app.memory.manager import get_memory
+from app.obs import metrics
+
+
+def _counted(node_name: str, fn):
+    """Wrap a graph node so each execution increments its Prometheus counter."""
+
+    async def wrapper(state: AgentState) -> AgentState:
+        metrics.inc_agent_node(node_name)
+        return await fn(state)
+
+    return wrapper
 
 
 async def finalize_node(state: AgentState) -> AgentState:
@@ -42,10 +53,10 @@ def _route_after_critic(state: AgentState) -> str:
 def build_graph():
     """Compile the full Planner -> Executor -> Critic -> Finalize graph."""
     graph = StateGraph(AgentState)
-    graph.add_node("planner", planner_node)
-    graph.add_node("executor", executor_node)
-    graph.add_node("critic", critic_node)
-    graph.add_node("finalize", finalize_node)
+    graph.add_node("planner", _counted("planner", planner_node))
+    graph.add_node("executor", _counted("executor", executor_node))
+    graph.add_node("critic", _counted("critic", critic_node))
+    graph.add_node("finalize", _counted("finalize", finalize_node))
 
     graph.set_entry_point("planner")
     graph.add_edge("planner", "executor")

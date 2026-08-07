@@ -73,6 +73,9 @@ class ToolRegistry:
         missing = [r for r in required if r not in arguments]
         if missing:
             raise ToolError(f"{name}: missing required args {missing}")
+        from app.obs import metrics
+
+        metrics.inc_tool(name)
         result = await tool.handler(**arguments)
         return str(result)
 
