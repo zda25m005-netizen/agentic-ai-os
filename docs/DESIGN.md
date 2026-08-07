@@ -227,5 +227,19 @@ drops straight into a `DPOTrainer` run in Week 4.
 offline preference data for **DPO** (and SFT) — the tractable, reproducible
 version of "learn from feedback," and the honest scope for a solo project.
 
+**Evaluation (built).** `make rerank-eval` compares three settings on the
+discriminating retrieval benchmark — hybrid with **no rerank**, the **LLM
+reranker**, and the **feedback reranker** — at recall@k, and the feedback
+reranker now has its own row in the main ablation table. The eval core takes
+pre-retrieved candidates + a reranker, so it's unit-tested offline with fakes;
+the real run needs embeddings + LLM. Feedback volume is surfaced on
+`GET /admin/stats` (total / 👍 / 👎 / with-better-answer).
+
+*Honest caveat:* the feedback reranker is lexical-only and trained on small,
+noisy, answer-level labels, so on this identifier-heavy benchmark it is not
+expected to beat the LLM reranker yet — the harness reports whatever is true,
+and the win case is more data + an embedding feature (future work). The point is
+a **measured, reproducible loop**, not an inflated number.
+
 ---
-*v5 — DPO dataset builder built (Week 2, Day 11). Next: evaluate the feedback loop.*
+*v6 — feedback loop evaluated (Week 2 complete). Next: Week 3 — observability.*
