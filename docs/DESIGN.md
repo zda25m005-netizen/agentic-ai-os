@@ -216,5 +216,16 @@ an embedding-cosine feature is the obvious next lever); labels are noisy because
 feedback is answer-level, propagated to passages; needs volume to beat the LLM
 reranker. The win/regression is measured directly in the ablation table (Day 12).
 
+**DPO dataset (built).** `app/feedback/dpo.py` turns feedback into preference
+pairs `{prompt, chosen, rejected}` from two sources: a 👎 with a suggested
+`better_answer` (chosen=better, rejected=shown), and a query that received both
+a 👍 and a 👎 answer (chosen=👍). Pairs are deduped, invalid ones dropped, and
+validated; `dpo_export.py` writes TRL-compatible JSONL (`make dpo-export`) that
+drops straight into a `DPOTrainer` run in Week 4.
+
+**Explicitly not RLHF.** There is no reward model and no online RL loop. This is
+offline preference data for **DPO** (and SFT) — the tractable, reproducible
+version of "learn from feedback," and the honest scope for a solo project.
+
 ---
-*v4 — feedback reranker built (Week 2, Day 10). Next: DPO pair export + eval.*
+*v5 — DPO dataset builder built (Week 2, Day 11). Next: evaluate the feedback loop.*
