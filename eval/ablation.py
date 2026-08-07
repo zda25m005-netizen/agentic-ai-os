@@ -30,7 +30,7 @@ from eval.run import build_indexes
 from eval.scorers import recall_at_k
 
 MODES = ("vector", "bm25", "hybrid")
-_LABEL_ORDER = ("vector", "bm25", "hybrid", "rerank")
+_LABEL_ORDER = ("vector", "bm25", "hybrid", "rerank", "feedback")
 
 # rerank_fn(query, hits) -> reordered hits
 RerankFn = Callable[[str, list[SearchHit]], Awaitable[list[SearchHit]]]
@@ -55,7 +55,8 @@ def load_ablation_qa(path: Path = ABLATION_QA) -> list[QAItem]:
 
 async def _sources_by_mode(
     item: QAItem, client, bm25: BM25Index, collection: str, top_k: int,
-    rerank_fn: RerankFn | None = None, pool: int = 6,
+    rerank_fn: RerankFn | None = None, feedback_rerank_fn: RerankFn | None = None,
+    pool: int = 6,
 ) -> dict[str, list[str]]:
     vector = await retriever.retrieve(item.question, client, collection, limit=top_k)
     sparse = bm25.search(item.question, limit=top_k)
@@ -67,25 +68,35 @@ async def _sources_by_mode(
         "bm25": [h.payload.get("source", "") for h in sparse],
         "hybrid": [h.payload.get("source", "") for h in hybrid],
     }
-    if rerank_fn is not None:
+    if rerank_fn is not None or feedback_rerank_fn is not None:
         candidates = await retriever.hybrid_retrieve(
             item.question, client, bm25, collection=collection, limit=pool
         )
-        reranked = await rerank_fn(item.question, candidates)
-        modes["rerank"] = [h.payload.get("source", "") for h in reranked[:top_k]]
+        if rerank_fn is not None:
+            reranked = await rerank_fn(item.question, candidates)
+            modes["rerank"] = [h.payload.get("source", "") for h in reranked[:top_k]]
+        if feedback_rerank_fn is not None:
+            reranked = await feedback_rerank_fn(item.question, candidates)
+            modes["feedback"] = [h.payload.get("source", "") for h in reranked[:top_k]]
     return modes
 
 
 async def run_ablation(
     qa: list[QAItem], client, bm25: BM25Index,
     collection: str = ABLATION_COLLECTION, top_k: int = 3,
-    rerank_fn: RerankFn | None = None,
+    rerank_fn: RerankFn | None = None, feedback_rerank_fn: RerankFn | None = None,
 ) -> dict[str, float]:
-    """Return mean recall@k for each retrieval mode (+ rerank if provided)."""
-    modes = list(MODES) + (["rerank"] if rerank_fn else [])
+    """Return mean recall@k per mode (+ rerank/feedback rerankers if provided)."""
+    modes = list(MODES)
+    if rerank_fn:
+        modes.append("rerank")
+    if feedback_rerank_fn:
+        modes.append("feedback")
     scores: dict[str, list[float]] = {m: [] for m in modes}
     for item in qa:
-        by_mode = await _sources_by_mode(item, client, bm25, collection, top_k, rerank_fn)
+        by_mode = await _sources_by_mode(
+            item, client, bm25, collection, top_k, rerank_fn, feedback_rerank_fn
+        )
         for mode in modes:
             scores[mode].append(recall_at_k(by_mode[mode], item.expected_source, top_k))
     return {mode: statistics.mean(vals) if vals else 0.0 for mode, vals in scores.items()}
@@ -96,7 +107,8 @@ def format_ablation_table(results_by_k: dict[int, dict[str, float]]) -> str:
     label = {"vector": "Vector only (dense)",
              "bm25": "BM25 only (sparse)",
              "hybrid": "Hybrid (RRF)",
-             "rerank": "Hybrid + reranker"}
+             "rerank": "Hybrid + LLM reranker",
+             "feedback": "Hybrid + feedback reranker"}
     ks = sorted(results_by_k)
     present = [m for m in _LABEL_ORDER if m in results_by_k[ks[0]]]
     header = "| Retrieval strategy | " + " | ".join(f"Recall@{k}" for k in ks) + " |"

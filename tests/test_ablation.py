@@ -64,5 +64,5 @@ def test_format_ablation_table_multi_k():
     )
     assert "Recall@1" in md and "Recall@3" in md
     assert "Vector only" in md and "Hybrid (RRF)" in md
-    assert "Hybrid + reranker" in md
+    assert "Hybrid + LLM reranker" in md
     assert "80%" in md
