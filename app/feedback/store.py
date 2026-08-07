@@ -89,3 +89,19 @@ async def record(
     return await store.save(
         query, answer, rating, run_id=run_id, better_answer=better_answer
     )
+
+
+async def summary() -> dict:
+    """Aggregate feedback counts for the admin dashboard. Safe if DB is down."""
+    zeros = {"total": 0, "up": 0, "down": 0, "with_better_answer": 0}
+    try:
+        store = FeedbackStore(get_sessionmaker())
+        items = await store.recent(limit=10_000)
+    except Exception:
+        return zeros
+    return {
+        "total": len(items),
+        "up": sum(1 for i in items if i.rating == "up"),
+        "down": sum(1 for i in items if i.rating == "down"),
+        "with_better_answer": sum(1 for i in items if i.better_answer),
+    }

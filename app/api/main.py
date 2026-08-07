@@ -156,9 +156,13 @@ def me(user: dict = Depends(current_user)) -> dict:  # noqa: B008
 
 
 @app.get("/admin/stats")
-def admin_stats(user: dict = Depends(_require_admin)) -> dict:  # noqa: B008
-    """Admin-only example endpoint (RBAC)."""
-    return {"ok": True, "viewer": user.get("sub"), "note": "admin-only data"}
+async def admin_stats(user: dict = Depends(_require_admin)) -> dict:  # noqa: B008
+    """Admin-only stats: feedback counts (RBAC)."""
+    return {
+        "ok": True,
+        "viewer": user.get("sub"),
+        "feedback": await feedback_store.summary(),
+    }
 
 
 @app.get("/health")
