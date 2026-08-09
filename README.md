@@ -117,7 +117,7 @@ Compose ships a full monitoring stack: **Prometheus** scrapes `/metrics`, and
 ```bash
 docker compose up -d prometheus grafana
 # Prometheus  → http://localhost:9090   (targets: api:8000/metrics)
-# Grafana     → http://localhost:3001   (admin / admin)
+# Grafana     → http://localhost:3002   (admin / admin)
 ```
 
 ## Tech stack

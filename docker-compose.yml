@@ -79,7 +79,7 @@ services:
     image: grafana/grafana:latest
     container_name: agentic-grafana
     ports:
-      - "3001:3000"   # 3000 is taken by the web UI
+      - "3002:3000"   # 3000 = web UI; 3001 was busy on this host
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
