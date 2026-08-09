@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     # Long-term memory backend: "sqlite" (default) or "postgres"
     memory_backend: str = Field(default="sqlite")
 
+    # Langfuse tracing (optional; export runs when both keys are set)
+    langfuse_public_key: str = Field(default="")
+    langfuse_secret_key: str = Field(default="")
+    langfuse_host: str = Field(default="https://cloud.langfuse.com")
+
 
 @lru_cache
 def get_settings() -> Settings:
