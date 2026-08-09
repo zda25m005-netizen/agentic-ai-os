@@ -12,8 +12,8 @@ from app.core.config import get_settings
 from app.feedback import store as feedback_store
 from app.graph import fusion
 from app.graph.retrieval import get_graph_context, graph_chunk_hits
+from app.obs import langfuse_export, tracing
 from app.obs import metrics as obs_metrics
-from app.obs import tracing
 from app.rag import citations, retriever, vectorstore
 
 settings = get_settings()
@@ -340,6 +340,11 @@ async def agent(req: AgentRequest) -> AgentResponse:
     try:
         state = await tracing.traced("agent.run", run_agent(req.goal))
         summary = trace.summary()
+        # Best-effort: export the full trace to Langfuse (no-op unless configured).
+        try:
+            langfuse_export.export_trace(trace, name="agent-run", metadata={"goal": req.goal})
+        except Exception:  # noqa: BLE001 - observability must never break the request
+            pass
     finally:
         tracing.clear_trace()
 
