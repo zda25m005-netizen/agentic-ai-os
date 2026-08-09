@@ -6,14 +6,14 @@
 
 Two working systems, both benchmarked: a hybrid-RAG engine that answers questions over documents with citations, and a LangGraph multi-agent orchestrator that plans, calls real tools, and self-critiques. Every capability ships with an automated eval and real numbers.
 
-**Status:** actively developed, built in public — one commit a day, ~190 tests, green CI.
+**Status:** actively developed, built in public — one commit a day, 283 tests, green CI.
 
 ---
 
 ## What's built and proven
 
 - **Hybrid RAG** — PDF/DOCX/PPTX/XLSX ingestion → recursive chunking → dense + BM25 retrieval fused with RRF → LLM reranker → grounded, **citation-aware** answers. *Measured: 100% retrieval recall@5, 100% answer correctness.*
-- **Multi-agent orchestrator** — Planner → Executor → Critic graph (LangGraph) with a bounded retry loop and a **function-calling tool-use loop** across 11 tools. *Measured: 100% task success on multi-step goals.*
+- **Multi-agent orchestrator** — Planner → Executor → Critic graph (LangGraph) with a bounded retry loop and a **function-calling tool-use loop** across 12 tools. *Measured: 100% task success on multi-step goals.*
 - **Evaluation harness** — labeled datasets, automated scorers (recall, LLM-judge correctness, citation accuracy), and a **retrieval ablation** comparing strategies. One command: `make eval`, `make ablation`.
 
 ## Demo
@@ -68,7 +68,7 @@ A controlled comparison on a purpose-built 10-doc benchmark with hard queries �
 flowchart TB
     UI["Client / API (FastAPI)"] --> PL["Planner"]
     PL --> EX["Executor (tool-use loop)"]
-    EX --> TOOLS["11 tools: web · python · sql · rag · files · ..."]
+    EX --> TOOLS["12 tools: web · python · sql · rag · graph · files · ..."]
     EX --> CR["Critic (bounded retries)"]
     CR -->|approve| FIN["Finalize"]
     CR -.->|retry| EX
@@ -112,12 +112,14 @@ A request-timing middleware records the HTTP series; token/cost are emitted from
 the LLM client; node/tool counters from the agent graph and tool registry.
 
 Compose ships a full monitoring stack: **Prometheus** scrapes `/metrics`, and
-**Grafana** comes pre-provisioned with Prometheus as its default datasource.
+**Grafana** comes pre-provisioned with Prometheus as its datasource **and three
+dashboards auto-loaded** — Traffic & Latency, LLM Cost & Tokens, and Agent Nodes
+& Tools (`ops/grafana/dashboards/`).
 
 ```bash
 docker compose up -d prometheus grafana
 # Prometheus  → http://localhost:9090   (targets: api:8000/metrics)
-# Grafana     → http://localhost:3002   (admin / admin)
+# Grafana     → http://localhost:3002   (admin / admin) — dashboards under "agentic"
 ```
 
 ## Tech stack
@@ -126,7 +128,9 @@ docker compose up -d prometheus grafana
 
 GraphRAG has its own eval harness (`make graph-eval`, fact-coverage over a graph-QA set) and a relational-goal router that steers the planner to `graph_search`. Design in [docs/DESIGN.md](docs/DESIGN.md) §9.
 
-**Designed / roadmap (not yet built):** LoRA fine-tuning + DPO preference tuning · a feedback-driven reranker · Postgres-backed long-term memory · Prometheus/Grafana + Langfuse observability · Kubernetes/Helm deploy. These are scoped in [docs/DESIGN.md](docs/DESIGN.md) as design, not claimed as complete.
+**Also built (Weeks 2–3):** feedback loop — 👍/👎 collection, a learned feedback reranker (LLM fallback), and DPO preference-pair export; Postgres-backed long-term memory (async SQLAlchemy, SQLite fallback); full observability — Prometheus `/metrics`, a request-timing middleware, and pre-provisioned Grafana dashboards. Every piece has an eval or config test.
+
+**Designed / roadmap (not yet built):** LoRA fine-tuning + before/after ablation · Langfuse trace export · Kubernetes/Helm deploy. Scoped in [docs/DESIGN.md](docs/DESIGN.md) as design, not claimed as complete.
 
 ## Run the whole stack (Docker)
 
@@ -170,7 +174,7 @@ cd agentic-ai-os
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env          # add OPENAI_API_KEY
-make test                     # ~190 tests
+make test                     # 283 tests
 make eval                     # RAG metrics
 make ablation                 # retrieval comparison
 make run                      # FastAPI on :8000
