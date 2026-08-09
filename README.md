@@ -122,6 +122,13 @@ docker compose up -d prometheus grafana
 # Grafana     → http://localhost:3002   (admin / admin) — dashboards under "agentic"
 ```
 
+**Langfuse (optional, LLM-native tracing).** Set `LANGFUSE_PUBLIC_KEY` +
+`LANGFUSE_SECRET_KEY` and every `/agent` run exports its full trace — each span
+(planner, executor, tools) plus LLM calls as `generation`s with model + token
+usage, and the run's cost/latency as trace metadata. Export is best-effort and a
+no-op when unconfigured, so it never affects a request. Complements Prometheus:
+Grafana for aggregate metrics, Langfuse for per-run debugging.
+
 ## Tech stack
 
 **Built:** FastAPI · Qdrant · hybrid retrieval (dense + BM25 + RRF + LLM reranker) · Neo4j GraphRAG (entity/relation extraction, k-hop retrieval, RRF fusion, `graph_search` tool, `/ask?mode=graph|fused`) · LangGraph agents · function-calling tool loop · pytest/CI · Docker Compose.
@@ -130,7 +137,9 @@ GraphRAG has its own eval harness (`make graph-eval`, fact-coverage over a graph
 
 **Also built (Weeks 2–3):** feedback loop — 👍/👎 collection, a learned feedback reranker (LLM fallback), and DPO preference-pair export; Postgres-backed long-term memory (async SQLAlchemy, SQLite fallback); full observability — Prometheus `/metrics`, a request-timing middleware, and pre-provisioned Grafana dashboards. Every piece has an eval or config test.
 
-**Designed / roadmap (not yet built):** LoRA fine-tuning + before/after ablation · Langfuse trace export · Kubernetes/Helm deploy. Scoped in [docs/DESIGN.md](docs/DESIGN.md) as design, not claimed as complete.
+Langfuse trace export is also built (optional, LLM-native per-run tracing — see Metrics section).
+
+**Designed / roadmap (not yet built):** LoRA fine-tuning + before/after ablation · Kubernetes/Helm deploy. Scoped in [docs/DESIGN.md](docs/DESIGN.md) as design, not claimed as complete.
 
 ## Run the whole stack (Docker)
 
