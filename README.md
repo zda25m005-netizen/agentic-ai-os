@@ -146,13 +146,23 @@ GraphRAG has its own eval harness (`make graph-eval`, fact-coverage over a graph
 
 Langfuse trace export is also built (optional, LLM-native per-run tracing — see Metrics section).
 
-**In progress (Week 4): LoRA fine-tuning.** The SFT dataset builder is done —
-`make sft-data` assembles instruction/response pairs from the labeled QA sets,
-formats them to a chat template, and writes a seeded 80/20 train/val split
-(`app/finetune/`, [dataset card](app/finetune/DATASET_CARD.md)). Training script,
-before/after eval, and adapter serving follow.
+**In progress (Week 4): LoRA fine-tuning.** Built: the SFT dataset builder
+(`make sft-data`) and the **LoRA training script** (PEFT + TRL `SFTTrainer`) with
+a typed hyperparameter config and a **Colab/Kaggle notebook**
+(`notebooks/lora_finetune_colab.ipynb`). The heavy ML libs live in an optional
+`[finetune]` extra and import lazily, so CI stays torch-free; the config/kwargs
+are unit-tested. Run on a free GPU:
 
-**Designed / roadmap (not yet built):** LoRA training run + before/after ablation · Kubernetes/Helm deploy. Scoped in [docs/DESIGN.md](docs/DESIGN.md) as design, not claimed as complete.
+```bash
+pip install -e ".[finetune]"      # on a GPU box (Colab/Kaggle)
+make sft-data
+python -m app.finetune.train --dry-run    # 1-step smoke test
+python -m app.finetune.train              # full LoRA run -> artifacts/lora-adapter
+```
+
+Before/after eval and adapter serving follow (Days 21–22).
+
+**Designed / roadmap (not yet built):** the training run itself + before/after ablation · Kubernetes/Helm deploy. Scoped in [docs/DESIGN.md](docs/DESIGN.md) as design, not claimed as complete.
 
 ## Run the whole stack (Docker)
 
