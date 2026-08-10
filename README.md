@@ -146,7 +146,13 @@ GraphRAG has its own eval harness (`make graph-eval`, fact-coverage over a graph
 
 Langfuse trace export is also built (optional, LLM-native per-run tracing — see Metrics section).
 
-**Designed / roadmap (not yet built):** LoRA fine-tuning + before/after ablation · Kubernetes/Helm deploy. Scoped in [docs/DESIGN.md](docs/DESIGN.md) as design, not claimed as complete.
+**In progress (Week 4): LoRA fine-tuning.** The SFT dataset builder is done —
+`make sft-data` assembles instruction/response pairs from the labeled QA sets,
+formats them to a chat template, and writes a seeded 80/20 train/val split
+(`app/finetune/`, [dataset card](app/finetune/DATASET_CARD.md)). Training script,
+before/after eval, and adapter serving follow.
+
+**Designed / roadmap (not yet built):** LoRA training run + before/after ablation · Kubernetes/Helm deploy. Scoped in [docs/DESIGN.md](docs/DESIGN.md) as design, not claimed as complete.
 
 ## Run the whole stack (Docker)
 
