@@ -1,4 +1,4 @@
-.PHONY: install run lint fmt test eval ablation graph-eval rerank-eval dpo-export clean
+.PHONY: install run lint fmt test eval ablation graph-eval rerank-eval dpo-export sft-data clean
 
 install:
 	pip install -e ".[dev]"
@@ -31,6 +31,9 @@ rerank-eval:
 
 dpo-export:
 	python -m app.feedback.dpo_cli
+
+sft-data:
+	python -m app.finetune.build_dataset
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
