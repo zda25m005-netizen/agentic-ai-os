@@ -70,7 +70,7 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./ops/prometheus:/etc/prometheus:ro
     depends_on:
       - api
     restart: unless-stopped

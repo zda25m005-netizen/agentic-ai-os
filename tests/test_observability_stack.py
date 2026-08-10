@@ -35,9 +35,9 @@ def test_compose_defines_prometheus_and_grafana():
     compose = _load("docker-compose.yml")
     services = compose["services"]
     assert "prometheus" in services and "grafana" in services
-    # Prometheus mounts our scrape config
+    # Prometheus mounts our config directory (scrape config + alert rules)
     mounts = " ".join(services["prometheus"].get("volumes", []))
-    assert "prometheus.yml" in mounts
+    assert "/etc/prometheus" in mounts
     # Grafana provisioning is mounted
     gmounts = " ".join(services["grafana"].get("volumes", []))
     assert "provisioning" in gmounts

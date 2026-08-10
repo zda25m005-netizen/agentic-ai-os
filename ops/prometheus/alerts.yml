@@ -1,0 +1,34 @@
+# Prometheus alerting rules for the Agentic AI OS.
+groups:
+  - name: agentic-api
+    rules:
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(agentic_requests_total{status=~"5.."}[5m]))
+            / sum(rate(agentic_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High 5xx error rate (>5%)"
+          description: "More than 5% of requests are failing over the last 5 minutes."
+
+      - alert: HighRequestLatencyP95
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(agentic_request_latency_seconds_bucket[5m])) by (le)) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 request latency above 2s"
+          description: "95th-percentile latency has exceeded 2 seconds for 10 minutes."
+
+      - alert: LLMCostSpike
+        expr: increase(agentic_llm_cost_usd_total[1h]) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM spend spike (> $1/hour)"
+          description: "Estimated LLM cost increased by more than $1 in the last hour."
