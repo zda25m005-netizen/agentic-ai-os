@@ -88,7 +88,7 @@ Adding a tool is ~40 lines: an async function + a `@tool` decorator with a JSON 
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/health` · `/config` | Liveness / runtime config |
+| GET | `/health` · `/readyz` · `/config` | Liveness / readiness (deps) / runtime config |
 | POST | `/chat` | Single-turn chat |
 | POST | `/ask` | Hybrid RAG with inline citations |
 | POST | `/agent` | Multi-agent: plan → tool use → critique → answer |
@@ -121,6 +121,13 @@ docker compose up -d prometheus grafana
 # Prometheus  → http://localhost:9090   (targets: api:8000/metrics)
 # Grafana     → http://localhost:3002   (admin / admin) — dashboards under "agentic"
 ```
+
+**Alerting + readiness + logs.** Prometheus loads alert rules
+(`ops/prometheus/alerts.yml`): high 5xx error rate, p95 latency > 2s, and an
+LLM cost spike. `GET /readyz` reports each backing service (Qdrant / Neo4j /
+Postgres) as up/down and returns `ok` or `degraded`. Every request is
+JSON-logged with a correlation id (also returned as the `X-Request-ID` header),
+so logs are machine-parseable and traceable end to end.
 
 **Langfuse (optional, LLM-native tracing).** Set `LANGFUSE_PUBLIC_KEY` +
 `LANGFUSE_SECRET_KEY` and every `/agent` run exports its full trace — each span

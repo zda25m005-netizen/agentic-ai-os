@@ -241,5 +241,16 @@ expected to beat the LLM reranker yet — the harness reports whatever is true,
 and the win case is more data + an embedding feature (future work). The point is
 a **measured, reproducible loop**, not an inflated number.
 
+## 11. Observability (built — Week 3)
+
+Three complementary layers: **Prometheus** metrics (`/metrics`) via a request
+middleware + LLM/agent/tool instrumentation, with **Grafana** dashboards
+(traffic/latency, cost/tokens, agent-node/tool) auto-provisioned; **Langfuse**
+per-run trace export (spans + LLM generations + cost metadata), optional and
+best-effort; and **operational readiness** — alert rules (error rate, p95
+latency, cost spike), a `/readyz` dependency probe (Qdrant/Neo4j/Postgres), and
+structured JSON logging with per-request correlation ids. All config is smoke-
+tested; all instrumentation is unit-tested offline.
+
 ---
-*v6 — feedback loop evaluated (Week 2 complete). Next: Week 3 — observability.*
+*v7 — observability complete (Week 3). Next: Week 4 — LoRA fine-tuning.*
