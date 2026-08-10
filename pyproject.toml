@@ -35,6 +35,16 @@ dev = [
     "aiosqlite>=0.20",
     "pyyaml>=6.0",
 ]
+# Heavy ML libs for LoRA fine-tuning — install only when training (GPU box):
+#   pip install -e ".[finetune]"
+finetune = [
+    "torch>=2.2",
+    "transformers>=4.44",
+    "peft>=0.12",
+    "trl>=0.9",
+    "datasets>=2.20",
+    "accelerate>=0.33",
+]
 
 [tool.ruff]
 line-length = 100
