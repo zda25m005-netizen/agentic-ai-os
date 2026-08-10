@@ -1,5 +1,7 @@
 """FastAPI entrypoint. Endpoints grow through the roadmap."""
+import logging
 import time
+import uuid
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,11 +14,13 @@ from app.core.config import get_settings
 from app.feedback import store as feedback_store
 from app.graph import fusion
 from app.graph.retrieval import get_graph_context, graph_chunk_hits
-from app.obs import langfuse_export, tracing
+from app.obs import health, langfuse_export, logging_setup, tracing
 from app.obs import metrics as obs_metrics
 from app.rag import citations, retriever, vectorstore
 
 settings = get_settings()
+logging_setup.configure_logging(settings.log_level)
+_access_log = logging.getLogger("agentic.access")
 
 app = FastAPI(title="Enterprise Agentic AI OS", version="0.1.0")
 
@@ -29,13 +33,25 @@ app.add_middleware(
 
 
 @app.middleware("http")
-async def _metrics_middleware(request: Request, call_next):
-    """Count every request and record its latency (Prometheus)."""
+async def _observability_middleware(request: Request, call_next):
+    """Assign a request id, record Prometheus metrics, and JSON-log the request."""
+    request_id = uuid.uuid4().hex[:12]
+    logging_setup.set_request_id(request_id)
     t0 = time.perf_counter()
     response = await call_next(request)
+    duration_ms = (time.perf_counter() - t0) * 1000.0
     obs_metrics.observe_request(
-        request.url.path, request.method, response.status_code,
-        time.perf_counter() - t0,
+        request.url.path, request.method, response.status_code, duration_ms / 1000.0
+    )
+    response.headers["X-Request-ID"] = request_id
+    _access_log.info(
+        "request",
+        extra={
+            "method": request.method,
+            "path": request.url.path,
+            "status": response.status_code,
+            "duration_ms": round(duration_ms, 2),
+        },
     )
     return response
 
@@ -188,9 +204,15 @@ async def admin_stats(user: dict = Depends(_require_admin)) -> dict:  # noqa: B0
 
 
 @app.get("/health")
-def health() -> dict:
-    """Liveness probe."""
+def health_endpoint() -> dict:
+    """Liveness probe (the process is up)."""
     return {"status": "ok", "version": app.version}
+
+
+@app.get("/readyz")
+async def readyz() -> dict:
+    """Readiness probe: are backing services (qdrant/neo4j/postgres) reachable?"""
+    return await health.check_all()
 
 
 @app.get("/config")
