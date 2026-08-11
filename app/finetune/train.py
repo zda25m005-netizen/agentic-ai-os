@@ -68,7 +68,27 @@ def train(cfg: LoRAConfig | None = None, dry_run: bool = False) -> str:
     trainer.train()
     trainer.save_model(cfg.output_dir)
     tokenizer.save_pretrained(cfg.output_dir)
+    _save_run_summary(cfg, train_ds)
     return cfg.output_dir
+
+
+def _save_run_summary(cfg: LoRAConfig, train_ds) -> None:
+    """Write a small JSON summary next to the adapter (base model, sizes, config)."""
+    import json
+    from pathlib import Path
+
+    summary = {
+        "base_model": cfg.base_model,
+        "lora_r": cfg.lora_r,
+        "lora_alpha": cfg.lora_alpha,
+        "target_modules": list(cfg.target_modules),
+        "epochs": cfg.epochs,
+        "learning_rate": cfg.learning_rate,
+        "num_train_examples": len(train_ds),
+    }
+    out = Path(cfg.output_dir) / "run_summary.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(summary, indent=2))
 
 
 def main() -> None:

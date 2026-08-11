@@ -1,4 +1,4 @@
-.PHONY: install run lint fmt test eval ablation graph-eval rerank-eval dpo-export sft-data clean
+.PHONY: install run lint fmt test eval ablation graph-eval rerank-eval dpo-export sft-data lora-merge lora-plot clean
 
 install:
 	pip install -e ".[dev]"
@@ -34,6 +34,12 @@ dpo-export:
 
 sft-data:
 	python -m app.finetune.build_dataset
+
+lora-merge:
+	python -m app.finetune.merge
+
+lora-plot:
+	python -m app.finetune.report
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
