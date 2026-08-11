@@ -35,9 +35,22 @@ make lora-merge       # base + adapter -> artifacts/lora-adapter-merged/
 ```
 
 ## 5. Before/after evaluation
-Compare base vs fine-tuned on the held-out set (Day 21). The harness reports
-whatever the numbers show — expect modest, style/format gains on this small
-dataset, not new knowledge (see the [dataset card](../app/finetune/DATASET_CARD.md)).
+```bash
+make lora-eval        # base vs artifacts/lora-adapter-merged on the held-out split
+```
+It scores two metrics on the held-out (val) split and prints a table:
+- **Exact match** — is the expected answer contained in the output (normalized)?
+- **Format adherence** — concise and clean (no code fences / LaTeX), the style
+  the system is graded on.
+
+The harness reports whatever the numbers show — on this small dataset expect
+modest **style/format** gains, not new knowledge (see the
+[dataset card](../app/finetune/DATASET_CARD.md)). Fill the table below after the run:
+
+| Metric | Base | Fine-tuned |
+|---|---|---|
+| Exact match | _tbd_ | _tbd_ |
+| Format adherence | _tbd_ | _tbd_ |
 
 ## Run summary (fill in after the real run)
 - Base model: `Qwen/Qwen2.5-0.5B-Instruct`
