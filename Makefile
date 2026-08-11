@@ -1,4 +1,4 @@
-.PHONY: install run lint fmt test eval ablation graph-eval rerank-eval dpo-export sft-data lora-merge lora-plot clean
+.PHONY: install run lint fmt test eval ablation graph-eval rerank-eval dpo-export sft-data lora-merge lora-plot lora-eval clean
 
 install:
 	pip install -e ".[dev]"
@@ -40,6 +40,9 @@ lora-merge:
 
 lora-plot:
 	python -m app.finetune.report
+
+lora-eval:
+	python -m eval.finetune_runner
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
