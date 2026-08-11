@@ -252,5 +252,23 @@ latency, cost spike), a `/readyz` dependency probe (Qdrant/Neo4j/Postgres), and
 structured JSON logging with per-request correlation ids. All config is smoke-
 tested; all instrumentation is unit-tested offline.
 
+## 12. Fine-tuning (Week 4)
+
+**Scope.** A LoRA fine-tune of a small chat base (`Qwen2.5-0.5B-Instruct`) on the
+project's own labeled QA, to sharpen the concise/factual answer style — plus an
+honest **before/after** comparison. This is a *pipeline + measurement*
+demonstration, not a large-scale train.
+
+**Pipeline (all coded + tested).** `app/finetune/`: SFT dataset assembly →
+chat-template format + seeded split → PEFT + TRL `SFTTrainer` (config-driven,
+lazy heavy imports) → loss-curve capture → adapter merge for serving.
+`eval/finetune_eval.py`: exact-match + format-adherence over the held-out split,
+base vs fine-tuned. Everything is CI-safe via injectable generators and an
+optional `[finetune]` extra; only the GPU training run happens off-CI (Colab).
+
+**Honesty.** Small data → expect **style/format** gains, not new knowledge. The
+harness prints whatever is true; no cherry-picking. Weights aren't committed
+(gitignored) — publish to the HF Hub or a Release if download is wanted.
+
 ---
-*v7 — observability complete (Week 3). Next: Week 4 — LoRA fine-tuning.*
+*v8 — fine-tuning pipeline + before/after eval coded (Week 4). Next: run on GPU, fill numbers; then Week 5 — deploy.*
