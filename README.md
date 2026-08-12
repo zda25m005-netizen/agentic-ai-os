@@ -146,23 +146,19 @@ GraphRAG has its own eval harness (`make graph-eval`, fact-coverage over a graph
 
 Langfuse trace export is also built (optional, LLM-native per-run tracing — see Metrics section).
 
-**In progress (Week 4): LoRA fine-tuning.** Built: the SFT dataset builder
-(`make sft-data`) and the **LoRA training script** (PEFT + TRL `SFTTrainer`) with
-a typed hyperparameter config and a **Colab/Kaggle notebook**
-(`notebooks/lora_finetune_colab.ipynb`). The heavy ML libs live in an optional
-`[finetune]` extra and import lazily, so CI stays torch-free; the config/kwargs
-are unit-tested. Run on a free GPU:
+**Week 4: LoRA fine-tuning — pipeline complete.** The whole path is coded and
+unit-tested (heavy ML libs in an optional `[finetune]` extra, lazily imported so
+CI stays torch-free):
 
-```bash
-pip install -e ".[finetune]"      # on a GPU box (Colab/Kaggle)
-make sft-data
-python -m app.finetune.train --dry-run    # 1-step smoke test
-python -m app.finetune.train              # full LoRA run -> artifacts/lora-adapter
-```
+- **Dataset** — `make sft-data` builds chat-format SFT pairs from the labeled QA sets ([dataset card](app/finetune/DATASET_CARD.md)).
+- **Train** — PEFT + TRL `SFTTrainer`, config-driven, with a [Colab notebook](notebooks/lora_finetune_colab.ipynb); captures the loss curve.
+- **Serve** — `make lora-merge` folds the adapter in; `/chat` serves it when `USE_FINETUNED=true` and **falls back to the API model** otherwise, reporting which model answered.
+- **Measure** — `make lora-eval` compares base vs fine-tuned on the held-out split; `make lora-report` writes an [ablation report](docs/FINETUNE_ABLATION.md) + chart with an auto-written, honest analysis.
 
-Before/after eval and adapter serving follow (Days 21–22).
+Full run guide: [docs/TRAINING.md](docs/TRAINING.md). The only step needing a GPU
+is the ~15-min training run; everything else runs and tests locally.
 
-**Designed / roadmap (not yet built):** the training run itself + before/after ablation · Kubernetes/Helm deploy. Scoped in [docs/DESIGN.md](docs/DESIGN.md) as design, not claimed as complete.
+**Designed / roadmap (not yet built):** the GPU training run (to fill real numbers) · Kubernetes/Helm deploy. Scoped in [docs/DESIGN.md](docs/DESIGN.md) as design, not claimed as complete.
 
 ## Run the whole stack (Docker)
 
