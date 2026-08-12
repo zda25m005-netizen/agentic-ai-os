@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     langfuse_secret_key: str = Field(default="")
     langfuse_host: str = Field(default="https://cloud.langfuse.com")
 
+    # Serve a locally fine-tuned model (falls back to the API model if missing)
+    use_finetuned: bool = Field(default=False)
+    finetuned_model_dir: str = Field(default="artifacts/lora-adapter-merged")
+
 
 @lru_cache
 def get_settings() -> Settings:
