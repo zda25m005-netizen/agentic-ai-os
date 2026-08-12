@@ -51,6 +51,12 @@ def main() -> None:
     results = compare(items, base_gen, ft_gen)
     print(format_comparison_table(results))
 
+    import json
+    from pathlib import Path
+
+    Path("eval/finetune_results.json").write_text(json.dumps(results, indent=2))
+    print("results -> eval/finetune_results.json  (build the report: make lora-report)")
+
 
 if __name__ == "__main__":
     main()
