@@ -29,10 +29,19 @@ Expect roughly 10–20 minutes on a T4 for the current small dataset.
 make lora-plot        # reads trainer_state.json -> docs/images/lora-loss.png
 ```
 
-## 4. Merge for serving (optional)
+## 4. Merge + serve
 ```bash
 make lora-merge       # base + adapter -> artifacts/lora-adapter-merged/
 ```
+Then point the app at it (in `.env`):
+```bash
+USE_FINETUNED=true
+FINETUNED_MODEL_DIR=artifacts/lora-adapter-merged
+```
+`/chat` will route through the fine-tuned model when it's present, and **fall
+back to the API model** if it's missing or local inference fails — never a hard
+error. The response's `model` field and `GET /config`'s `active_model` show
+which model actually answered (`lora:...` vs the API model).
 
 ## 5. Before/after evaluation
 ```bash
