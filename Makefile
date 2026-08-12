@@ -44,6 +44,9 @@ lora-plot:
 lora-eval:
 	python -m eval.finetune_runner
 
+lora-report:
+	python -m app.finetune.ablation
+
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	rm -rf .pytest_cache .ruff_cache
