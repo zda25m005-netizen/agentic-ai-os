@@ -12,6 +12,7 @@ from app.agents.graph import run_agent
 from app.core import auth, llm
 from app.core.config import get_settings
 from app.feedback import store as feedback_store
+from app.finetune import serving
 from app.graph import fusion
 from app.graph.retrieval import get_graph_context, graph_chunk_hits
 from app.obs import health, langfuse_export, logging_setup, tracing
@@ -224,6 +225,7 @@ def config() -> dict:
         "embedding_model": settings.embedding_model,
         "qdrant_url": settings.qdrant_url,
         "llm_key_configured": llm.is_configured(),
+        "active_model": serving.model_display_name(serving.model_label()),
     }
 
 
@@ -241,11 +243,11 @@ async def chat(req: ChatRequest) -> ChatResponse:
     messages.append({"role": "user", "content": req.message})
 
     try:
-        reply = await llm.chat(messages)
+        reply, label = await serving.answer(messages)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"LLM call failed: {exc}") from exc
 
-    return ChatResponse(reply=reply, model=settings.llm_model)
+    return ChatResponse(reply=reply, model=serving.model_display_name(label))
 
 
 @app.post("/ask", response_model=AskResponse)
