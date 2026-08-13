@@ -1,0 +1,51 @@
+# Default values for the agentic-ai-os chart. Override per environment.
+image:
+  pullPolicy: IfNotPresent
+
+api:
+  image: agentic-ai-os-api:latest
+  replicas: 2
+  port: 8000
+  env:
+    QDRANT_URL: http://qdrant:6333
+    NEO4J_URI: bolt://neo4j:7687
+    DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/agentic
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+web:
+  image: agentic-ai-os-web:latest
+  replicas: 2
+  port: 3000
+  apiBase: http://api:8000
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+datastores:
+  qdrant:
+    image: qdrant/qdrant:latest
+    storage: 5Gi
+  neo4j:
+    image: neo4j:5-community
+    storage: 5Gi
+    auth: neo4j/neo4jpassword
+  postgres:
+    image: postgres:16-alpine
+    storage: 5Gi
+    user: postgres
+    password: postgres
+    db: agentic
+
+ingress:
+  enabled: false
+  host: agentic.local

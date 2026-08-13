@@ -1,0 +1,6 @@
+apiVersion: v2
+name: agentic-ai-os
+description: Enterprise Agentic AI OS — hybrid RAG + GraphRAG multi-agent platform
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
