@@ -1,0 +1,53 @@
+# Next.js frontend — Deployment + Service.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agentic-web
+  labels:
+    app: agentic-web
+    app.kubernetes.io/part-of: agentic-ai-os
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: agentic-web
+  template:
+    metadata:
+      labels:
+        app: agentic-web
+    spec:
+      containers:
+        - name: web
+          image: agentic-ai-os-web:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NEXT_PUBLIC_API_BASE
+              value: "http://api:8000"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "500m"
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  labels:
+    app: agentic-web
+spec:
+  selector:
+    app: agentic-web
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
