@@ -1,0 +1,63 @@
+# FastAPI backend — Deployment + Service.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agentic-api
+  labels:
+    app: agentic-api
+    app.kubernetes.io/part-of: agentic-ai-os
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: agentic-api
+  template:
+    metadata:
+      labels:
+        app: agentic-api
+    spec:
+      containers:
+        - name: api
+          image: agentic-ai-os-api:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: QDRANT_URL
+              value: "http://qdrant:6333"
+            - name: NEO4J_URI
+              value: "bolt://neo4j:7687"
+            - name: DATABASE_URL
+              value: "postgresql+asyncpg://postgres:postgres@postgres:5432/agentic"
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  labels:
+    app: agentic-api
+spec:
+  selector:
+    app: agentic-api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
