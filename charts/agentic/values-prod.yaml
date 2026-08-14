@@ -1,0 +1,25 @@
+# Production overrides. Apply with:
+#   helm upgrade --install agentic charts/agentic -f charts/agentic/values-prod.yaml \
+#     --set secrets.OPENAI_API_KEY=$OPENAI_API_KEY --set secrets.JWT_SECRET=$JWT_SECRET
+image:
+  pullPolicy: Always
+
+api:
+  replicas: 3
+
+web:
+  replicas: 3
+
+config:
+  APP_ENV: prod
+  LOG_LEVEL: WARNING
+
+# Secrets are injected at deploy time (never committed), e.g. via --set or a
+# sealed-secret / external-secrets operator. Left empty here on purpose.
+secrets:
+  OPENAI_API_KEY: ""
+  JWT_SECRET: ""
+
+ingress:
+  enabled: true
+  host: agentic.example.com
