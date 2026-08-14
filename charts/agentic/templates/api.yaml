@@ -21,11 +21,11 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - containerPort: {{ .Values.api.port }}
-          env:
-            {{- range $k, $v := .Values.api.env }}
-            - name: {{ $k }}
-              value: {{ $v | quote }}
-            {{- end }}
+          envFrom:
+            - configMapRef:
+                name: agentic-config
+            - secretRef:
+                name: agentic-secrets
           readinessProbe:
             httpGet:
               path: /readyz
