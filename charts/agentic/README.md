@@ -46,8 +46,28 @@ External Secrets Operator, or your cloud's Secrets Manager) over `--set`.
 | `datastores.postgres.image` / `.storage` / creds | `postgres:16-alpine` / `5Gi` | Memory DB |
 | `ingress.enabled` / `ingress.host` | `false` / `agentic.local` | Ingress toggle + host (Day 27) |
 
+## Networking + autoscaling
+
+With `ingress.enabled=true`, one Ingress fronts both services: `/` → web,
+`/api` → api. Inside the cluster, everything talks over stable Service DNS
+(`api`, `web`, `qdrant`, `neo4j`, `postgres`). With `autoscaling.enabled=true`, a
+HorizontalPodAutoscaler scales the API on CPU (`targetCPUUtilizationPercentage`).
+
+```mermaid
+flowchart LR
+  U[User] --> ING[Ingress\nagentic.example.com]
+  ING -->|/| WEB[web Service :3000]
+  ING -->|/api| API[api Service :8000]
+  WEB --> API
+  API --> Q[(qdrant)]
+  API --> N[(neo4j)]
+  API --> P[(postgres)]
+  HPA[HPA: CPU target] -. scales .-> API
+```
+
+Both are **off by default** (dev) and **on in `values-prod.yaml`**.
+
 ## Notes
-- Secrets are plain values here for readability; move them to a `Secret` in prod
-  (Day 26 adds ConfigMap/Secret support).
+- Secrets are injected at deploy time and never committed (see above).
 - Structure is validated by `tests/test_helm_chart.py`; run `helm lint` locally
   for the full check.
