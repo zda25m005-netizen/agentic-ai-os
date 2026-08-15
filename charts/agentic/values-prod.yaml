@@ -22,4 +22,13 @@ secrets:
 
 ingress:
   enabled: true
+  className: nginx
   host: agentic.example.com
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 65

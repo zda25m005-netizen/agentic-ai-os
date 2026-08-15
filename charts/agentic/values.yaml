@@ -58,4 +58,13 @@ datastores:
 
 ingress:
   enabled: false
+  className: nginx
   host: agentic.local
+  annotations: {}
+
+# Horizontal Pod Autoscaler for the API (scales on CPU).
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
