@@ -1,0 +1,56 @@
+name: k8s-smoke
+
+# Stand the chart up in a throwaway kind cluster and prove the API comes healthy.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  kind-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: agentic
+
+      - name: Build images
+        run: |
+          docker build -t agentic-ai-os-api:ci .
+          docker build -t agentic-ai-os-web:ci ./frontend
+
+      - name: Load images into kind
+        run: |
+          kind load docker-image agentic-ai-os-api:ci --name agentic
+          kind load docker-image agentic-ai-os-web:ci --name agentic
+
+      - name: Deploy chart
+        run: |
+          helm upgrade --install agentic charts/agentic \
+            --set api.image=agentic-ai-os-api:ci \
+            --set web.image=agentic-ai-os-web:ci \
+            --set image.pullPolicy=Never
+
+      - name: Wait for API rollout
+        run: kubectl rollout status deploy/agentic-api --timeout=180s
+
+      - name: Smoke test /health
+        run: |
+          kubectl port-forward svc/api 8000:8000 &
+          sleep 8
+          curl -fsS http://localhost:8000/health | grep -q '"status":"ok"'
+
+      - name: Dump diagnostics on failure
+        if: failure()
+        run: |
+          kubectl get pods,svc
+          kubectl describe deploy/agentic-api || true
+          kubectl logs -l app=agentic-api --tail=100 || true
