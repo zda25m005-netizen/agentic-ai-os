@@ -3,219 +3,159 @@
 **Positioning:** *"The Runtime for Autonomous AI Agents — plan, execute, remember,
 recover, and evaluate long-running autonomous workflows."*
 
-v1 gave us a bounded agent (Planner → Executor → Critic → Answer). v2 turns it
-into a **mission runtime** that pursues objectives across sessions, schedules
-agents under resource budgets, recovers from failure, remembers across missions,
-and is driven from a **SaaS control plane**. Built on the v1 repo.
+Built on the v1 repo. 30 build days, daily commits (6–10/day). Every feature ships
+with tests and CI green.
 
-30 build days, daily commits (aim 6–10/day). Every feature ships with tests.
-**Honesty rule from v1 stays:** state limits, never inflate numbers.
+## Design principles (read this before Day 1)
 
-Two products:
+1. **Depth over breadth.** We build **8 deep capabilities**, not 50 shallow
+   features. No "100+ features / 20 tools" README padding — that impresses no one.
+2. **Real numbers only.** Every metric on the demo/landing (success, recovery
+   rate, safety, avg cost, avg latency) is produced by the **benchmark run**
+   (Day 20 + Day 30), never invented. If a number is bad, we show it and explain.
+3. **The ML component is a real ML project**, not decoration. The anomaly detector
+   gets the full lifecycle: **dataset generation → feature engineering → training →
+   evaluation → experiment tracking → serving → monitoring**.
+4. **Tests every day.** If it's not tested, it doesn't count as done.
+
+## The 8 capabilities (what we make exceptional)
+
 ```
-                 AGENTIC AI OS
-        ┌─────────────┴─────────────┐
-   AI/Agent Runtime           Web Control Plane
-   (missions, scheduler,      (dashboard, mission graph,
-    memory, recovery,          activity stream, evidence,
-    policies, eval)            eval, security, API)
+1. Long-horizon autonomous missions      (Phase A)
+2. Intelligent scheduling + resources     (Phase B)
+3. Fault recovery + dynamic replanning    (Phase B)
+4. ML anomaly detection (full lifecycle)  (Phase C)
+5. Persistent multi-layer memory          (Phase D)
+6. Evaluation + fault-injection benchmark (Phase D)  → real numbers
+7. Self-improving agent policies          (Phase D)
+8. Production-grade control plane          (Phase E–F)
+   (+ evidence-based GraphRAG & security carried from v1, deepened)
 ```
 
 ---
 
 ## Phase A — Mission Runtime Core (Days 1–6)
 
-The shift from "answer a task" to "maintain a mission until the objective is met."
+*The shift from "answer a task" to "maintain a mission until the objective is met."*
 
-### Day 1 — Mission domain model + persistence
-- `app/missions/models.py`: `Mission` (objective, status, deadline, priority,
-  created/updated), `Subgoal`/`Task` (mission_id, description, status, deps, result).
-- State machine: `CREATED → ACTIVE → PAUSED → COMPLETED | FAILED`.
-- Async SQLAlchemy store (reuse `app/db`) + repository CRUD.
-- Tests: state transitions, persistence roundtrip.
-- **Done when:** you can create a mission, persist it, and move it through states.
-
-### Day 2 — Goal Interpreter + Mission Planner
-- `goal_interpreter.py`: user goal → structured `Objective` (success criteria,
-  constraints, deadline, notify-conditions). LLM-backed, injectable, tested with fakes.
-- `mission_planner.py`: objective → ordered **subgoals** (a DAG, not a flat list).
-- Tests: interpreter parses a monitoring goal; planner emits a valid DAG.
-
-### Day 3 — Task graph (DAG) + dependency resolution
-- `task_graph.py`: nodes + typed edges, topological order, "ready tasks" (deps met).
-- Cycle detection; per-task status; persistence.
-- Tests: ready-set computation, topo order, cycle rejection.
-
-### Day 4 — Mission runtime loop (resumable)
-- `runtime.py`: a **tick** — pick ready tasks, run them (via the v1 agent graph),
-  update the graph, persist. Stop anytime, resume later (all state in the DB).
-- Replan hook when a task fails or evidence contradicts.
-- Tests: a mission advances across two separate `tick()` calls (resumability).
-
-### Day 5 — Mission API
-- `POST /missions`, `GET /missions`, `GET /missions/:id`,
-  `POST /missions/:id/pause|resume`, `GET /missions/:id/tasks`,
-  `GET /missions/:id/trajectory`.
-- Pydantic schemas; tests with fakes.
-
-### Day 6 — Background mission worker
-- A loop/worker that `tick()`s active missions on a schedule (reuse scheduled-tasks
-  pattern or a simple asyncio loop; Redis-backed queue lands in Phase D).
-- Wire task execution to the v1 executor/tools. Integration test end-to-end (offline).
-- **Milestone:** a mission runs, pauses, resumes, and completes across ticks.
-
----
+- **Day 1** — Mission + Task domain model, state machine
+  (`CREATED→ACTIVE→PAUSED→COMPLETED|FAILED`), async store, tests.
+- **Day 2** — Goal Interpreter (goal → structured objective + success criteria +
+  notify-conditions) + Mission Planner (objective → subgoal DAG).
+- **Day 3** — Task graph (DAG), dependency resolution, ready-set, cycle detection.
+- **Day 4** — Mission runtime **tick** — resumable across sessions (stop today,
+  continue tomorrow); replan hook. Test: advances across two `tick()`s.
+- **Day 5** — Mission API (create / get / pause / resume / tasks / trajectory).
+- **Day 6** — Background mission worker; wire task execution to the v1 agent graph.
+  **Milestone:** a mission runs, pauses, resumes, completes.
 
 ## Phase B — Scheduler, Resources, Router, Recovery (Days 7–12)
 
-The "OS" layer — real systems/ML engineering, not just LLM calls.
+*The "OS" layer — real systems engineering, algorithms not LLM calls.*
 
-### Day 7 — Agent Scheduler
-- `scheduler.py`: score-and-order ready tasks by **priority, deadline, cost,
-  dependencies, expected value** (weighted function + topological constraint).
-  Deterministic algorithm (not an LLM) → testable.
-- Tests: given competing missions, the right one runs first.
+- **Day 7** — Agent Scheduler (priority · deadline · cost · deps · expected value;
+  deterministic scoring). Test: right mission runs first.
+- **Day 8** — Resource Manager (token / USD / time / tool-call / API budgets;
+  enforce; on-threshold downgrade or terminate).
+- **Day 9** — Model Router (task-type → model tier, maximize quality s.t.
+  cost/latency/token limits).
+- **Day 10** — Failure Recovery Engine (retry → alt tool → cached → replan →
+  escalate → terminate; bounded). Test: simulated tool timeout recovers.
+- **Day 11** — Integrate scheduler + resources + router + recovery into the tick.
+- **Day 12** — Multi-agent roles (Researcher / Analyst / Executor) + Critic/Judge
+  + replan loop. **Milestone:** budgeted, scheduled, recoverable multi-agent mission.
 
-### Day 8 — Resource Manager
-- `resources.py`: per-task/mission **budgets** — tokens, USD cost, wall-time,
-  tool-calls, API calls. Track consumption; enforce; emit "budget exceeded".
-- Hooks: on threshold → downgrade model / terminate task.
-- Tests: budget accounting + enforcement.
+## Phase C — ML Anomaly Detection: FULL LIFECYCLE (Days 13–17)
 
-### Day 9 — Model Router
-- `router.py`: task-type → model tier (cheap/code/reasoning/summarize), optimizing
-  **quality subject to cost/latency/token limits**. Config of tiers in settings.
-- Tests: routing picks the expected tier per task class + respects budget.
+*A real ML project inside the OS — this is the "substantial ML" the reviewer wants.*
 
-### Day 10 — Failure Recovery Engine
-- `recovery.py`: decision policy on failure — **retry → alternative tool →
-  cached result → replan → escalate to human → terminate**. Bounded.
-- Wrap tool/step execution so any failure flows through it.
-- Tests: simulate tool timeout → falls back → recovers (deterministic).
+- **Day 13 — Dataset generation.** Synthetic financial-transaction generator with
+  **injected, labeled anomalies** (amount spikes, velocity, duplicate, off-hours,
+  geo-mismatch). Deterministic seed; train/val/test splits; a dataset card.
+  `ml/anomaly/data.py`. Tests: label balance, splits, reproducibility.
+- **Day 14 — Feature engineering.** Temporal + rolling-window stats, ratios,
+  entity aggregates, encodings — a reusable **feature pipeline** (fit on train
+  only, no leakage). Tests: pipeline determinism, no train/test leakage.
+- **Day 15 — Model training + experiment tracking.** Train + compare **≥3 models**
+  (IsolationForest, GradientBoosting/XGBoost, a small autoencoder), logged to
+  **MLflow** (params, metrics, artifacts). `ml/anomaly/train.py`. CI-safe smoke.
+- **Day 16 — Evaluation + model registry.** **PR-AUC, precision/recall, F1** on
+  held-out, threshold selection, calibration; pick the winner; save a **versioned
+  model artifact**. Honest results table. Tests on the scorers.
+- **Day 17 — Serving + monitoring + integration.** Versioned **scorer** + endpoint;
+  **monitoring** — input **drift** (PSI/KS), score-distribution, live
+  precision/recall → Prometheus/Grafana panels. Wire into the mission as the
+  "anomaly detected → evidence" step. **Milestone:** a real, served, monitored ML
+  model driving agent decisions.
 
-### Day 11 — Integrate scheduler + resources + router + recovery
-- Thread all four through the mission runtime tick.
-- Integration tests (offline): a budgeted, scheduled, recoverable tick.
+## Phase D — Memory, Benchmark, Self-Improvement (Days 18–21)
 
-### Day 12 — Multi-agent roles + Judge + replan loop
-- Roles: **Researcher / Analyst / Executor** (specialized prompts + tool sets),
-  coordinated by the scheduler; **Critic/Judge** gates mission success → replan or finish.
-- Tests: role selection + the replan branch.
-- **Milestone:** a mission with budgets, model routing, and failure recovery.
+- **Day 18 — Multi-layer memory.** working / episodic / semantic / procedural /
+  organizational stores (build on v1). Tests.
+- **Day 19 — Memory dynamics.** unified retrieval + **importance scoring** +
+  **consolidation** + **decay** + **conflict resolution**; wire into the runtime.
+- **Day 20 — Fault-injection benchmark (the numbers).** Task generator across
+  categories (easy/medium/hard/adversarial/long-horizon/**tool-failure**/
+  memory-dependent/ambiguous) + metrics (task success, planning, tool selection,
+  **recovery rate**, memory retrieval, cost, latency, hallucination, **safety**,
+  human-intervention). Runner → **results.json** that feeds the dashboards.
+  Start at a stated size (hundreds), scale later. This is where the demo numbers
+  come from — real, reproducible.
+- **Day 21 — Self-improving policy engine.** policy = ordered strategy; on failure
+  → analyze → candidate policy → **A/B on the bench → promote if better**.
+  Test: a better candidate is promoted, a worse one isn't.
 
----
+## Phase E — Real-time + Control-Plane Foundation (Days 22–26)
 
-## Phase C — Memory System + Evaluation + Self-Improvement (Days 13–18)
+*Dark, premium, Linear/Vercel/Datadog aesthetic. shadcn/ui + React Flow + Recharts.*
 
-### Day 13 — Memory interfaces: working + episodic
-- `app/memory2/`: a `Memory` protocol; **working** (current mission scratch) +
-  **episodic** (events: what happened) stores. Build on v1 episodic.
-- Tests.
+- **Day 22** — Redis + distributed workers (queue + shared state); compose/Helm.
+- **Day 23** — Real-time **SSE** activity stream (`/missions/:id/stream`) + API v1
+  (versioned) + OpenAPI.
+- **Day 24** — Control-plane scaffold: layout, dark theme, sidebar (Overview,
+  Missions, Agents, Memory, Evidence, Evaluations, Security, Observability).
+- **Day 25** — Dashboard overview + **Active Missions** (live) + **Mission page
+  with an interactive task graph** (React Flow, click-node → detail drawer).
+- **Day 26** — Live **activity stream** page (SSE) + **Agent detail**
+  (model, task, tools, resource usage, memories, confidence).
 
-### Day 14 — Semantic + procedural + organizational memory
-- **Semantic** (facts I know — vectors), **procedural** (how-to / successful
-  strategies), **organizational** (what the whole system learned). Tests.
+## Phase F — Pages, Demo, Deploy (Days 27–30)
 
-### Day 15 — Retrieval + importance scoring + consolidation
-- Unified retrieval across memory types; **importance scoring**; **consolidation**
-  (summarize episodics into semantic/organizational). Tests.
-
-### Day 16 — Decay + conflict resolution + wire-in
-- Time/importance **decay**; **conflict resolution** (contradictory memories →
-  keep higher-confidence/newer). Wire memory into the mission runtime. Tests.
-
-### Day 17 — AgentBench-style evaluation
-- `eval/agentbench/`: a **task generator** across categories (easy/medium/hard/
-  adversarial/long-horizon/tool-failure/memory-dependent/ambiguous). Start at
-  hundreds of tasks (scale later — state the number).
-- Metrics: task success, planning success, tool selection, **recovery rate**,
-  memory retrieval, cost, latency, token efficiency, hallucination, safety,
-  human-intervention rate. Runner + report. Tests on the harness.
-
-### Day 18 — Self-improving policy engine
-- `policies.py`: a **policy** = an ordered strategy (e.g. `search → summarize →
-  answer`). On failure, analyze → propose a **candidate policy** → **A/B evaluate**
-  on the bench → **promote if better**. Deterministic evaluation; the "learning"
-  is search over strategies, not RL.
-- Tests: a better candidate gets promoted; a worse one doesn't.
-- **Milestone:** the runtime measurably improves a strategy on the bench.
-
----
-
-## Phase D — Real-time Backend + Control-Plane Foundations (Days 19–24)
-
-### Day 19 — Redis + distributed workers
-- Redis for the mission/task queue + shared state; a worker pool that pulls tasks.
-- `docker-compose` + Helm updated. Tests (fakeredis / in-memory).
-
-### Day 20 — Real-time event stream (SSE/WebSocket)
-- Emit agent activity events (task started, tool called, anomaly, replan) over
-  **SSE** (simplest) or WebSocket. `GET /missions/:id/stream`.
-- Tests: events published on a tick.
-
-### Day 21 — Public API v1 + OpenAPI + playground
-- Finalize `/api/v1/missions...` surface, versioned; OpenAPI schema; a simple
-  request playground page. Tests.
-
-### Day 22 — Control-plane scaffold (Next.js + shadcn/ui, dark premium)
-- New `control-plane/` (or extend `frontend/`): Tailwind + shadcn/ui + layout,
-  sidebar (Overview, Missions, Agents, Memory, Evidence, Evaluations, Security,
-  Observability), dark/premium theme (Linear/Vercel/Datadog vibe).
-
-### Day 23 — Dashboard + Active Missions (live)
-- Overview cards + **Active Missions** list with progress bars, polling/SSE.
-
-### Day 24 — Mission page: interactive task graph
-- **React Flow** task graph; click a node → drawer with agent, model, tool calls,
-  latency, tokens, cost, confidence, evidence.
+- **Day 27** — **Memory Explorer** + **Evidence Graph** (React Flow over GraphRAG)
+  + **Eval / Observability / Security** dashboards (Recharts; real benchmark +
+  Prometheus data; surface v1 security guards + a live block-event log).
+- **Day 28** — **Public landing** (hero + live mission viz) + **"Try Live Demo"**
+  sandbox with preset missions incl. the **Failure-Recovery demo** — no config
+  for the recruiter, runs safely.
+- **Day 29** — Architecture page + interactive **API playground** + restrained
+  Framer Motion polish + information hierarchy pass.
+- **Day 30** — Full e2e smoke; **run the benchmark for real** and wire the numbers
+  into landing/eval pages; README/positioning rewrite; docs; compose + Helm;
+  demo video; **tag v2.0.0** + release notes.
 
 ---
 
-## Phase E — Control-Plane Pages + Demo + Deploy (Days 25–30)
-
-### Day 25 — Live activity stream + Agent detail
-- Real-time **activity stream** page (SSE); **Agent detail** (model, current task,
-  tools, resource usage, memories, confidence).
-
-### Day 26 — Memory Explorer + Evidence Graph
-- **Memory Explorer** (working/episodic/semantic/procedural, searchable);
-  **Evidence Graph** (React Flow over GraphRAG: entity → source → evidence → confidence).
-
-### Day 27 — Evaluation + Observability + Security Center
-- **Eval dashboard** (Recharts: success/planning/recovery over versions);
-  **Observability** (system health, LLM cost/tokens — reuse Prometheus);
-  **Security Center** (prompt-injection blocked, SSRF, path-traversal, sandbox — surface v1 guards + a live event log).
-
-### Day 28 — Public landing + Live Demo sandbox
-- Hero + live mission visualization; **"Try Live Demo"** with preset missions
-  (Financial Investigation, Research, Doc Intelligence, **Failure Recovery Demo**)
-  running in a safe sandbox — no config for the recruiter.
-
-### Day 29 — Architecture page + API playground + polish
-- Beautiful architecture page; interactive API playground; restrained Framer
-  Motion; information hierarchy pass.
-
-### Day 30 — Integration, docs, deploy, release
-- Full e2e smoke; README/positioning rewrite ("The Runtime for Autonomous AI
-  Agents"); architecture + reference docs; compose + Helm updated; demo video;
-  **tag v2.0.0** + release notes.
-
----
+## The live demo flow (what a recruiter sees)
+Mission created → Planner builds task graph → Scheduler allocates resources →
+Agents execute → Tools queried → Memory retrieved → **ML model flags anomaly** →
+Evidence graph built → contradiction found → agent replans → tool fails →
+**recovery strategy** → policy/approval check → action → verification → mission
+complete → trajectory evaluated → memory consolidated. Numbers shown are the
+**benchmark's real output**.
 
 ## Daily rhythm
-1. `git pull`, re-read yesterday's last commit.
-2. Build the day's core (backend feature or 1–2 UI pages), tests last, CI green.
-3. 6–10 real commits (schema → logic → integration → tests → docs). No padding.
-4. If a day overflows, split it — real small commits beat faked ones.
+`git pull` → build the day's core → tests last → CI green → 6–10 real commits
+(schema → logic → integration → tests → docs). No padding. If a day overflows,
+split it — real small commits beat faked ones.
 
-## If you fall behind (scope-cut order)
-Cut depth here first, in this order: 10k→hundreds of bench tasks; policy engine to
-a single documented A/B; organizational memory to a stub; WebSocket → SSE only;
-fewer control-plane pages (keep Dashboard, Mission graph, Activity stream, Eval).
-The **mission runtime + scheduler + recovery + control-plane dashboard** is the
-irreducible core that proves the thesis.
+## Honest scope note
+The ML lifecycle now gets a proper 5 days (Days 13–17), so memory is compressed to
+2 days (Days 18–19). If you want memory equally deep, we extend ~2–3 days past 30
+— your call as we approach Phase D. The **irreducible core** (mission runtime +
+scheduler + recovery + the ML lifecycle + the benchmark + the control-plane
+dashboard) is what proves the thesis; everything else is depth we add if time allows.
 
-## Positioning line for the README/landing
-> **Agentic AI OS** — The Runtime for Autonomous AI Agents. A production-oriented
-> runtime for planning, executing, remembering, recovering, and evaluating
-> long-running autonomous workflows.
+## Scope-cut order (if behind)
+benchmark task count (thousands → hundreds) → policy engine to one documented A/B →
+organizational memory to a stub → WebSocket to SSE-only → fewer control-plane pages
+(keep Dashboard, Mission graph, Activity stream, Eval, the ML monitoring panels).
