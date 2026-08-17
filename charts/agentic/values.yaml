@@ -2,6 +2,22 @@
 image:
   pullPolicy: IfNotPresent
 
+# Run pods as an unprivileged user; drop all Linux capabilities.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+      - ALL
+
+# Default-deny + least-privilege NetworkPolicies (off in dev, on in prod).
+networkPolicy:
+  enabled: false
+
 # Non-secret runtime config -> ConfigMap (mounted via envFrom on the API).
 config:
   QDRANT_URL: http://qdrant:6333
