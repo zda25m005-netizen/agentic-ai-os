@@ -4,6 +4,9 @@
 image:
   pullPolicy: Always
 
+networkPolicy:
+  enabled: true
+
 api:
   replicas: 3
 

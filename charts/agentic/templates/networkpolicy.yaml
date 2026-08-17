@@ -1,0 +1,56 @@
+{{- if .Values.networkPolicy.enabled }}
+# Default-deny all ingress in the namespace...
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  labels:
+    {{- include "agentic.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# ...then allow only what's needed: web -> api on the API port.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-web-to-api
+  labels:
+    {{- include "agentic.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: agentic-api
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: agentic-web
+      ports:
+        - protocol: TCP
+          port: {{ .Values.api.port }}
+---
+# api -> datastores (qdrant / neo4j / postgres).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-api-to-datastores
+  labels:
+    {{- include "agentic.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: ["qdrant", "neo4j", "postgres"]
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: agentic-api
+{{- end }}
