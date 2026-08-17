@@ -270,5 +270,27 @@ optional `[finetune]` extra; only the GPU training run happens off-CI (Colab).
 harness prints whatever is true; no cherry-picking. Weights aren't committed
 (gitignored) — publish to the HF Hub or a Release if download is wanted.
 
+## 13. Deployment (Week 5)
+
+Kubernetes via a **Helm chart** (`charts/agentic`): templated Deployments for
+api/web, StatefulSets + PVCs for qdrant/neo4j/postgres, ConfigMap + Secret
+(secrets injected at deploy, never committed), Ingress and an API HPA, and
+hardening — non-root pods, dropped capabilities, graceful shutdown, tuned probes,
+default-deny NetworkPolicies. dev/prod values. A CI **kind smoke-deploy** proves
+the chart boots and `/health` responds on every push; `v*` tags publish images
+to GHCR. Raw manifests in `k8s/` mirror the chart for `kubectl apply`.
+
 ---
-*v8 — fine-tuning pipeline + before/after eval coded (Week 4). Next: run on GPU, fill numbers; then Week 5 — deploy.*
+## Roadmap status — v1.0.0 (complete)
+
+- **Week 1** GraphRAG (Neo4j) — done
+- **Week 2** Postgres memory + feedback reranker + DPO — done
+- **Week 3** Observability (Prometheus/Grafana/Langfuse/alerts) — done
+- **Week 4** LoRA fine-tuning pipeline + before/after ablation — done (GPU run pending)
+- **Week 5** Kubernetes/Helm deploy + hardening + CI smoke — done
+
+Deferred by design (documented, not half-built): Kafka streaming, multi-region,
+full RLHF. The one manual action outside CI is the GPU fine-tune run to fill in
+real before/after numbers.
+
+*v9 — v1.0.0: full roadmap complete. 356 tests, green CI.*
