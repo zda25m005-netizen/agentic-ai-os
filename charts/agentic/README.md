@@ -67,6 +67,20 @@ flowchart LR
 
 Both are **off by default** (dev) and **on in `values-prod.yaml`**.
 
+## Hardening
+
+- **Non-root pods.** `podSecurityContext` runs as UID 1000 (`runAsNonRoot`), and
+  the container context sets `allowPrivilegeEscalation: false` and drops **all**
+  Linux capabilities.
+- **Graceful shutdown.** `terminationGracePeriodSeconds: 30` + a `preStop` sleep
+  let in-flight requests drain before the pod is killed (uvicorn handles SIGTERM).
+- **Tuned probes.** Readiness (`/readyz`) and liveness (`/health`) have explicit
+  `timeoutSeconds` + `failureThreshold` so a slow dependency doesn't flap pods.
+- **NetworkPolicies** (`networkPolicy.enabled`, on in prod): default-deny ingress,
+  then allow only web→api and api→datastores — least privilege between tiers.
+
+All enforced by `tests/test_helm_hardening.py`.
+
 ## Notes
 - Secrets are injected at deploy time and never committed (see above).
 - Structure is validated by `tests/test_helm_chart.py`; run `helm lint` locally
