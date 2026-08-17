@@ -6,7 +6,7 @@
 
 Two working systems, both benchmarked: a hybrid-RAG engine that answers questions over documents with citations, and a LangGraph multi-agent orchestrator that plans, calls real tools, and self-critiques. Every capability ships with an automated eval and real numbers.
 
-**Status:** actively developed, built in public — one commit a day, 283 tests, green CI.
+**Status:** feature-complete (5-week build in public) — hybrid RAG + GraphRAG, multi-agent + 12 tools, long-term memory, a measured feedback loop, full observability, a LoRA fine-tuning pipeline, and a Kubernetes/Helm deploy. **356 tests, green CI.**
 
 ---
 
@@ -167,6 +167,19 @@ cp .env.example .env    # add OPENAI_API_KEY
 docker compose up --build
 # API on :8000, UI on :3000, Qdrant on :6333, Neo4j on :7474/:7687
 ```
+
+## Deploy to Kubernetes
+
+A Helm chart deploys the whole stack with dev/prod values, Ingress, an API HPA,
+non-root hardened pods, and NetworkPolicies. CI stands it up in a kind cluster on
+every push and checks `/health`. One-command local cluster:
+
+```bash
+make k8s-up      # kind + build/load images + helm install
+make k8s-down
+```
+
+Full guide: [docs/DEPLOY.md](docs/DEPLOY.md) · chart: [charts/agentic](charts/agentic/README.md).
 
 ## Database (Postgres)
 
