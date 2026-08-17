@@ -89,4 +89,61 @@ flowchart LR
     M5 --> REP
 ```
 
-See [DESIGN.md](DESIGN.md) for component details and trade-offs.
+## Retrieval: RAG + GraphRAG
+
+```mermaid
+flowchart LR
+    Q["Question"] --> DENSE["Dense (embeddings)"]
+    Q --> BM25["BM25 (from scratch)"]
+    DENSE --> RRF["RRF fusion"]
+    BM25 --> RRF
+    RRF --> RR["LLM / feedback reranker"]
+    Q --> EX["Entity extract"]
+    EX --> KHOP["k-hop neighborhood (Neo4j)"]
+    RR --> FUSE["GraphRAG fusion"]
+    KHOP --> FUSE
+    FUSE --> ANS["Grounded answer + citations"]
+```
+
+## Feedback loop (learning from users)
+
+```mermaid
+flowchart LR
+    UI["👍 / 👎 (+ better answer)"] --> FB[("feedback store")]
+    FB --> PAIRS["(query, passage, label) pairs"]
+    PAIRS --> LR["learned reranker (LLM fallback)"]
+    FB --> DPO["DPO (chosen, rejected) pairs → JSONL"]
+    DPO --> FT["LoRA fine-tune (PEFT + TRL)"]
+    FT --> SRV["serve (fallback to API model)"]
+```
+
+## Observability
+
+`/metrics` (Prometheus: requests, latency, tokens, cost, per-node/tool) →
+Prometheus scrape → 3 Grafana dashboards + alert rules. Per-run traces optionally
+exported to **Langfuse**. `/readyz` reports Qdrant/Neo4j/Postgres health;
+structured JSON logs carry a per-request `X-Request-ID`.
+
+## Deployment
+
+```mermaid
+flowchart TB
+    subgraph Cluster["Kubernetes (Helm chart)"]
+      ING["Ingress (/ → web, /api → api)"] --> WEB["web Deployment"]
+      ING --> API["api Deployment + HPA (CPU)"]
+      WEB --> API
+      API --> QD[("qdrant StatefulSet")]
+      API --> NEO[("neo4j StatefulSet")]
+      API --> PG[("postgres StatefulSet")]
+      CM["ConfigMap"] --> API
+      SEC["Secret"] --> API
+      NP["NetworkPolicies (default-deny)"] -. guards .- API
+    end
+```
+
+Non-root pods, dropped capabilities, graceful shutdown, tuned probes. A CI
+kind smoke-deploy proves the chart boots and `/health` responds on every push;
+version tags publish images to GHCR.
+
+See [DESIGN.md](DESIGN.md) for component details and trade-offs, and
+[DEPLOY.md](DEPLOY.md) for the deploy runbook.
