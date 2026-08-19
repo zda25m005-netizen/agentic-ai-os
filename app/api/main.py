@@ -2,15 +2,19 @@
 import logging
 import time
 import uuid
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
+import app.missions.models  # noqa: F401  (register mission tables on Base)
 from app.agents.graph import run_agent
+from app.api.missions import router as missions_router
 from app.core import auth, llm
 from app.core.config import get_settings
+from app.db import session as db
 from app.feedback import store as feedback_store
 from app.finetune import serving
 from app.graph import fusion
@@ -23,7 +27,17 @@ settings = get_settings()
 logging_setup.configure_logging(settings.log_level)
 _access_log = logging.getLogger("agentic.access")
 
-app = FastAPI(title="Enterprise Agentic AI OS", version="0.1.0")
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    """Best-effort create of mission tables at boot (no-op if the DB is down)."""
+    try:
+        await db.init_models(db.get_engine())
+    except Exception as exc:  # never block startup on a cold database
+        logging.getLogger("agentic").warning("mission table init skipped: %s", exc)
+    yield
+
+
+app = FastAPI(title="Enterprise Agentic AI OS", version="0.1.0", lifespan=_lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -31,6 +45,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(missions_router)
 
 
 @app.middleware("http")
