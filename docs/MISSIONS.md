@@ -82,7 +82,30 @@ Two pure modules — no DB, no I/O — give the runtime one source of truth for
 The tick loop (Day 4) is then trivial: while not complete and not blocked, run
 the ready-set, persist statuses, repeat.
 
+## Resumable runtime tick (Day 4)
+
+`runtime.py` drives a mission over its DAG; `executor.py` is the pluggable unit
+of work.
+
+- **`TaskExecutor`** (`executor.py`) — `async (Task) -> str`. The runtime never
+  knows *how* a task runs, only that it returns a result or raises. Tests inject
+  a fake; `chat_executor()` is a stopgap single-LLM-call executor, and the full
+  tool-using agent plugs in here later without touching the runtime.
+- **`MissionRuntime.tick(mission_id)`** — advances the mission by **one DAG
+  layer**: reload state, recover any crash-stranded `RUNNING` tasks, run the
+  current ready-set (each task `RUNNING` → `DONE`/`FAILED`, persisted
+  individually), then re-settle the mission. Returns a `TickResult` (status +
+  which tasks ran/failed).
+- **`MissionRuntime.run(mission_id)`** — tick until terminal, paused, or no
+  progress is possible (`max_ticks` guards against a spin loop).
+
+**Resumability** falls out of persistence: every tick reloads from the repo and
+holds no in-memory progress, so a mission can stop after any tick and a *fresh*
+runtime resumes from the persisted state. A task left `RUNNING` by a dead worker
+is reset to `PENDING` and retried (`_recover`) — single-worker for now; proper
+leasing arrives with the scheduler. A failed task strands its dependents, which
+`is_blocked` detects, so the mission moves to `FAILED` instead of ticking forever.
+
 ## What's coming (per ROADMAP_V2.md)
-Resumable runtime tick (Day 4) → Mission API (Day 5) → background worker
-(Day 6). Then the OS layer: scheduler, resource budgets, model router, and
-failure recovery.
+Mission API (Day 5) → background worker (Day 6). Then the OS layer: scheduler,
+resource budgets, model router, and failure recovery.
