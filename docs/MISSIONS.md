@@ -106,6 +106,29 @@ is reset to `PENDING` and retried (`_recover`) — single-worker for now; proper
 leasing arrives with the scheduler. A failed task strands its dependents, which
 `is_blocked` detects, so the mission moves to `FAILED` instead of ticking forever.
 
+## Mission API (Day 5)
+
+`app/api/missions.py` — an `APIRouter` mounted under `/missions`, a thin HTTP
+layer over the package. It owns no logic: the repository owns persistence and the
+state machine, the runtime owns execution. Dependencies (`get_mission_repo`,
+`get_chat_fn`, `get_executor`) are injected so the whole surface runs offline in
+tests.
+
+| Method & path | Does |
+| --- | --- |
+| `POST /missions` | goal → persisted mission with a wired task DAG (201) |
+| `GET /missions` | list missions, optional `?status=` filter |
+| `GET /missions/{id}` | mission + tasks + progress |
+| `GET /missions/{id}/tasks` | just the tasks |
+| `POST /missions/{id}/tick` | advance one DAG layer, report what ran/failed |
+| `POST /missions/{id}/run` | drive to a terminal/paused state (`?max_ticks=`) |
+| `POST /missions/{id}/pause` · `/resume` | guarded status change |
+
+Errors map to status codes: unknown mission → **404**, an illegal state
+transition (e.g. pausing a `CREATED` mission) → **409**, a planning/LLM failure
+during create → **502**. Mission tables are created at startup via a FastAPI
+`lifespan` hook (best-effort, so a cold database never blocks boot).
+
 ## What's coming (per ROADMAP_V2.md)
-Mission API (Day 5) → background worker (Day 6). Then the OS layer: scheduler,
-resource budgets, model router, and failure recovery.
+Background worker (Day 6) drives active missions off an HTTP request. Then the OS
+layer: scheduler, resource budgets, model router, and failure recovery.
