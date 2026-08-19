@@ -36,8 +36,7 @@ guarded). Async SQLAlchemy; tests run on in-memory SQLite.
 ## Task status
 
 `PENDING` (deps unmet) → `READY` (deps met) → `RUNNING` → `DONE` | `FAILED` |
-`SKIPPED`. The task graph + ready-set computation lands next (Day 3), then the
-resumable runtime tick (Day 4).
+`SKIPPED`.
 
 ## From goal to mission (Day 2)
 
@@ -60,7 +59,30 @@ Example: *"monitor Company X for 30 days, notify me only on strong evidence"* �
 Objective(horizon=monitoring, deadline=30, notify=["strong evidence"]) → tasks
 [baseline] → [detect anomalies] → [report].
 
+## Task DAG engine (Day 3)
+
+Two pure modules — no DB, no I/O — give the runtime one source of truth for
+"what can run now" and "are we stuck":
+
+- **`toposort.py`** — `topological_order(tasks)` (Kahn's algorithm, ascending-id
+  tie-break so it's deterministic) and `has_cycle(tasks)`. A cycle is a **runtime
+  guard**: the planner only emits backward deps, but a persisted edit could
+  introduce one, so the runtime refuses to execute a cyclic graph instead of
+  looping forever. Dangling deps (pointing at a missing task) are ignored.
+- **`task_graph.py`** — the execution view:
+  - `ready_tasks(tasks)` — PENDING/READY tasks whose **every** dependency is
+    `DONE` (or `SKIPPED`), in id order. A `FAILED` or missing dep leaves the
+    dependent unready, so work never runs on incomplete inputs.
+  - `is_complete(tasks)` — all tasks settled (`DONE`/`SKIPPED`).
+  - `is_blocked(tasks)` — not complete, nothing `RUNNING`, and nothing ready:
+    the mission is stuck (usually a failed dep stranding its dependents). The
+    runtime uses this to **fail** a mission rather than tick forever.
+  - `progress(tasks)` → `(settled, total)` for the UI and telemetry.
+
+The tick loop (Day 4) is then trivial: while not complete and not blocked, run
+the ready-set, persist statuses, repeat.
+
 ## What's coming (per ROADMAP_V2.md)
-Task DAG + ready-set (Day 3) → resumable runtime tick (Day 4) → Mission API
-(Day 5) → background worker (Day 6). Then the OS layer: scheduler, resource
-budgets, model router, and failure recovery.
+Resumable runtime tick (Day 4) → Mission API (Day 5) → background worker
+(Day 6). Then the OS layer: scheduler, resource budgets, model router, and
+failure recovery.
