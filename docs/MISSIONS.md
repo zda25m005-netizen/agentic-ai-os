@@ -129,6 +129,27 @@ transition (e.g. pausing a `CREATED` mission) → **409**, a planning/LLM failur
 during create → **502**. Mission tables are created at startup via a FastAPI
 `lifespan` hook (best-effort, so a cold database never blocks boot).
 
+## Background worker (Day 6)
+
+`app/missions/worker.py` — a `MissionWorker` drives missions forward **without a
+client holding a request**, so a mission created via `POST /missions` progresses
+on its own. It's the same `MissionRuntime.tick` the API uses; the worker just
+calls it on a schedule.
+
+- `poll_once()` — lists non-terminal, non-paused missions (`created`/`active`,
+  highest priority first) and ticks each once.
+- `run(stop)` — loops `poll_once` every `worker_poll_seconds`, waking early when
+  the stop event is set (`asyncio.wait`, so shutdown is prompt and there's no
+  version-specific timeout handling). A failing poll is logged and swallowed — a
+  transient error never kills the worker.
+- `drain(max_rounds)` — ticks until no mission can make progress; used by tests
+  and one-shot runs. A round that advances nothing stops the loop (no spin).
+
+It runs as a background `asyncio` task started in the FastAPI **lifespan**, gated
+by `worker_enabled` (default on; off in tests, which drive the runtime directly).
+On shutdown the task is signalled and cancelled cleanly. Paused and terminal
+missions are left untouched; a failed task fails its mission rather than looping.
+
 ## What's coming (per ROADMAP_V2.md)
-Background worker (Day 6) drives active missions off an HTTP request. Then the OS
-layer: scheduler, resource budgets, model router, and failure recovery.
+The OS layer: scheduler, resource budgets, model router, and failure recovery —
+then the ML anomaly-detection lifecycle and the benchmark.
