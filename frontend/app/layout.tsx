@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import Sidebar from "./components/Sidebar";
 
 export const metadata: Metadata = {
-  title: "Agentic AI OS",
-  description: "Hybrid RAG + multi-agent orchestrator — demo UI",
+  title: "Agentic AI OS — Control Plane",
+  description: "Long-horizon autonomous mission runtime — control plane",
 };
 
 export default function RootLayout({
@@ -13,7 +14,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <div className="app">
+          <Sidebar />
+          <main className="content">{children}</main>
+        </div>
+      </body>
     </html>
   );
 }
