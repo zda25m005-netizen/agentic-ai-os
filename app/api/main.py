@@ -1,4 +1,5 @@
 """FastAPI entrypoint. Endpoints grow through the roadmap."""
+import asyncio
 import logging
 import time
 import uuid
@@ -19,6 +20,9 @@ from app.feedback import store as feedback_store
 from app.finetune import serving
 from app.graph import fusion
 from app.graph.retrieval import get_graph_context, graph_chunk_hits
+from app.missions.executor import chat_executor
+from app.missions.repository import MissionRepository
+from app.missions.worker import MissionWorker
 from app.obs import health, langfuse_export, logging_setup, tracing
 from app.obs import metrics as obs_metrics
 from app.rag import citations, retriever, vectorstore
@@ -29,12 +33,36 @@ _access_log = logging.getLogger("agentic.access")
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
-    """Best-effort create of mission tables at boot (no-op if the DB is down)."""
+    """Create mission tables and run the background mission worker.
+
+    Both are best-effort: a cold database never blocks startup, and the worker
+    only runs when enabled in config (off in tests).
+    """
     try:
         await db.init_models(db.get_engine())
     except Exception as exc:  # never block startup on a cold database
         logging.getLogger("agentic").warning("mission table init skipped: %s", exc)
-    yield
+
+    stop = asyncio.Event()
+    worker_task: asyncio.Task | None = None
+    if settings.worker_enabled:
+        worker = MissionWorker(
+            MissionRepository(db.get_sessionmaker()),
+            chat_executor(),
+            poll_interval=settings.worker_poll_seconds,
+        )
+        worker_task = asyncio.create_task(worker.run(stop))
+
+    try:
+        yield
+    finally:
+        stop.set()
+        if worker_task is not None:
+            worker_task.cancel()
+            try:
+                await worker_task
+            except asyncio.CancelledError:
+                pass
 
 
 app = FastAPI(title="Enterprise Agentic AI OS", version="0.1.0", lifespan=_lifespan)
