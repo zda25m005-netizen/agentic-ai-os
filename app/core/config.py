@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     use_finetuned: bool = Field(default=False)
     finetuned_model_dir: str = Field(default="artifacts/lora-adapter-merged")
 
+    # Background mission worker: drive active missions without a client request.
+    worker_enabled: bool = Field(default=True)
+    worker_poll_seconds: float = Field(default=2.0)
+
 
 @lru_cache
 def get_settings() -> Settings:
