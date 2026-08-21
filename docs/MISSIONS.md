@@ -150,6 +150,26 @@ by `worker_enabled` (default on; off in tests, which drive the runtime directly)
 On shutdown the task is signalled and cancelled cleanly. Paused and terminal
 missions are left untouched; a failed task fails its mission rather than looping.
 
+## Agent scheduler (Day 7)
+
+`app/missions/scheduler.py` — under contention the worker may have many drivable
+missions; the scheduler decides which runs first. It's a deterministic scoring
+function (pure algorithm, no LLM), so the same input always yields the same
+order. `score_mission` sums four weighted terms:
+
+- **priority** — the caller's explicit priority (dominant).
+- **deadline urgency** — 0 with no deadline, rising toward 1 as it approaches,
+  pinned to 2.0 once **overdue** so an overdue mission can't be starved.
+- **age** — a small per-hour boost so a low-priority mission eventually runs
+  instead of starving forever.
+- **value** — an optional expected-value hint from `mission.meta["value"]`.
+
+`order_missions` sorts by score (ties broken by ascending id, for determinism);
+`pick_next` returns the top one. The worker's `_due()` now returns drivable
+missions in this scheduled order, so the most important mission is ticked first.
+Weights live in a frozen `SchedulerWeights` dataclass and are easy to tune.
+
 ## What's coming (per ROADMAP_V2.md)
-The OS layer: scheduler, resource budgets, model router, and failure recovery —
-then the ML anomaly-detection lifecycle and the benchmark.
+The rest of the OS layer: resource budgets (Day 8), model router (Day 9), and
+failure recovery (Day 10) — integrated into the tick on Day 11, then the ML
+anomaly-detection lifecycle and the benchmark.
