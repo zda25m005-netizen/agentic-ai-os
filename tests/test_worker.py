@@ -84,6 +84,23 @@ async def test_run_loop_drives_then_stops():
     assert (await repo.get(m.id)).status == MissionStatus.COMPLETED
 
 
+async def test_poll_ticks_higher_priority_mission_first():
+    repo = await _repo()
+    low = await _chain(repo, priority=0)
+    high = await _chain(repo, priority=5)
+
+    order: list[int] = []
+
+    async def recording(task: Task) -> str:
+        order.append(task.mission_id)
+        return "ok"
+
+    await MissionWorker(repo, recording).poll_once()
+
+    # the high-priority mission's task must be executed before the low one's
+    assert order.index(high.id) < order.index(low.id)
+
+
 async def test_poll_survives_executor_errors():
     repo = await _repo()
     m = await _chain(repo)

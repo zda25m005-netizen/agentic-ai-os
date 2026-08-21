@@ -15,6 +15,7 @@ from app.missions.executor import TaskExecutor
 from app.missions.models import Mission
 from app.missions.repository import MissionRepository
 from app.missions.runtime import MissionRuntime, TickResult
+from app.missions.scheduler import order_missions
 from app.missions.state import MissionStatus
 
 log = logging.getLogger(__name__)
@@ -37,9 +38,14 @@ class MissionWorker:
         self._poll = poll_interval
 
     async def _due(self) -> list[Mission]:
-        """Non-terminal, non-paused missions, highest priority first (repo order)."""
+        """Drivable missions in scheduled order (highest score first).
+
+        Ordering is delegated to the scheduler (priority · deadline · age · value)
+        so the most important mission is ticked first under contention.
+        """
         missions = await self._repo.list(limit=100)
-        return [m for m in missions if m.status in _DRIVABLE]
+        drivable = [m for m in missions if m.status in _DRIVABLE]
+        return order_missions(drivable)
 
     async def poll_once(self) -> list[TickResult]:
         """Tick every drivable mission once. Returns each tick's result."""
