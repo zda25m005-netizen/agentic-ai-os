@@ -169,7 +169,25 @@ order. `score_mission` sums four weighted terms:
 missions in this scheduled order, so the most important mission is ticked first.
 Weights live in a frozen `SchedulerWeights` dataclass and are easy to tune.
 
+## Resource manager (Day 8)
+
+`app/missions/resources.py` — a mission must not burn unbounded money or time.
+Each mission can carry a `Budget` (USD, tokens, wall-clock seconds, tool calls,
+LLM calls; any dimension `None` = unbounded). `ResourceManager` accumulates
+`Usage` via `record(...)` and reports one decision from `evaluate()`:
+
+- **OK** — under the soft threshold, proceed.
+- **DOWNGRADE** — crossed the soft threshold (default 80%): keep going but
+  cheaper (the model router drops a tier on Day 9).
+- **TERMINATE** — a budget is exhausted; stop the mission.
+
+The decision is the **max utilization across all set dimensions**, so the
+tightest budget governs. Time is measured from a start clock (`elapsed`), so it's
+injectable and deterministic in tests. `budget_from_meta` reads a budget spec off
+`mission.meta["budget"]`, so budgets travel with the mission. Enforcing this in
+the tick and persisting usage is Day 11.
+
 ## What's coming (per ROADMAP_V2.md)
-The rest of the OS layer: resource budgets (Day 8), model router (Day 9), and
-failure recovery (Day 10) — integrated into the tick on Day 11, then the ML
-anomaly-detection lifecycle and the benchmark.
+The rest of the OS layer: model router (Day 9) and failure recovery (Day 10) —
+integrated into the tick on Day 11, then the ML anomaly-detection lifecycle and
+the benchmark.
