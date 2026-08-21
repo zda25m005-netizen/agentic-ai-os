@@ -207,7 +207,27 @@ The catalog (`fast` / `balanced` / `frontier`) carries **illustrative,
 configurable** quality/cost/latency figures meant to be replaced with real
 per-deployment numbers — not vendor benchmarks. Selection is deterministic.
 
+## Failure recovery (Day 10)
+
+`app/missions/recovery.py` — when a step fails, retrying forever is wrong and
+giving up instantly is wrong. The engine climbs a **bounded ladder**: retry →
+alternate tool → cached → replan → escalate → terminate, advancing one rung per
+failure. The error *type* sets the starting rung — a `timeout` starts with a
+plain retry, a `tool_error` skips straight to the alternate tool, an
+`invalid_plan` jumps to replan.
+
+- `RecoveryEngine.decide(ctx)` is the **pure policy** — deterministic, always
+  bounded (it reaches `terminate` after `max_attempts`, so it can't loop).
+- `execute_with_recovery(primary, engine, handlers)` is the **async runner**:
+  `RETRY` re-runs the primary op, other rungs dispatch to fallback handlers, a
+  rung with no handler is skipped, and it raises `RecoveryExhausted` if it reaches
+  escalate/terminate. It returns the value plus the full **decision trail**, so
+  the UI/telemetry can show exactly how a mission recovered.
+
+Tested end to end: a simulated tool timeout recovers on retry, a broken tool
+falls back to an alternate, and a doubly-broken tool climbs to the cached result.
+
 ## What's coming (per ROADMAP_V2.md)
-Failure recovery (Day 10), then all four OS subsystems — scheduler, resources,
-router, recovery — integrated into the tick on Day 11. Then the ML
-anomaly-detection lifecycle and the benchmark.
+All four OS subsystems — scheduler, resources, router, recovery — integrated into
+the tick on Day 11 (the milestone: a budgeted, scheduled, recoverable mission).
+Then the ML anomaly-detection lifecycle and the benchmark.
