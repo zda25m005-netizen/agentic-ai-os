@@ -187,7 +187,27 @@ injectable and deterministic in tests. `budget_from_meta` reads a budget spec of
 `mission.meta["budget"]`, so budgets travel with the mission. Enforcing this in
 the tick and persisting usage is Day 11.
 
+## Model router (Day 9)
+
+`app/missions/model_router.py` — not every step deserves the strongest (and
+priciest) model. The router maps a task's **role** to a preferred model **tier**,
+then returns the **highest-quality model that still fits the cost and latency
+constraints**:
+
+- `executor` → tier 1 (fast/cheap); `researcher` → tier 2; `analyst` / `planner`
+  / `critic` → tier 3 (frontier). Unknown roles use the default tier.
+- `route(...)` picks the best model at or below the target tier that satisfies
+  `max_usd_per_1k` / `max_latency_ms`; if nothing fits, it **degrades gracefully**
+  to the cheapest model rather than failing.
+- `route_for(task_type, status)` folds in the resource manager's decision:
+  `DOWNGRADE` drops one tier — this is where the budget policy from Day 8 gets
+  teeth (tight budget → cheaper model automatically).
+
+The catalog (`fast` / `balanced` / `frontier`) carries **illustrative,
+configurable** quality/cost/latency figures meant to be replaced with real
+per-deployment numbers — not vendor benchmarks. Selection is deterministic.
+
 ## What's coming (per ROADMAP_V2.md)
-The rest of the OS layer: model router (Day 9) and failure recovery (Day 10) —
-integrated into the tick on Day 11, then the ML anomaly-detection lifecycle and
-the benchmark.
+Failure recovery (Day 10), then all four OS subsystems — scheduler, resources,
+router, recovery — integrated into the tick on Day 11. Then the ML
+anomaly-detection lifecycle and the benchmark.
