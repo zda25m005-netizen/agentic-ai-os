@@ -31,8 +31,14 @@ async def build_mission(
     )
 
     index_to_id: dict[int, int] = {}
+    roles: dict[str, str] = {}
     for i, spec in enumerate(specs):
         deps = [index_to_id[d] for d in spec.depends_on if d in index_to_id]
         task = await repo.add_task(mission.id, spec.description, depends_on=deps)
         index_to_id[i] = task.id
-    return mission
+        roles[str(task.id)] = spec.role  # so the model router can route per task
+
+    # persist the role map alongside the objective (no task-schema change needed)
+    meta = dict(mission.meta)
+    meta["roles"] = roles
+    return await repo.update_meta(mission.id, meta)
