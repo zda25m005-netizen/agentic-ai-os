@@ -227,7 +227,34 @@ plain retry, a `tool_error` skips straight to the alternate tool, an
 Tested end to end: a simulated tool timeout recovers on retry, a broken tool
 falls back to an alternate, and a doubly-broken tool climbs to the cached result.
 
+## OS subsystems integrated into the tick (Day 11 — Phase B milestone)
+
+`runtime.py` now runs every mission through all four OS subsystems:
+
+- **Scheduler** — already chooses *which mission* ticks first (worker, Day 7); the
+  tick then runs that mission's ready-set in topological order.
+- **Resources** — each tick builds a `ResourceManager` from the mission's budget
+  (`meta["budget"]`) and its **carried-over usage** (`meta["usage"]`), timed from
+  `created_at`. Usage accrues as tasks run; when a budget is exhausted the mission
+  is set `FAILED` with `meta["termination_reason"] = "budget exhausted"`. Usage is
+  persisted every tick, so budgets survive restarts.
+- **Router** — each task is routed to a model tier by its **role**
+  (`meta["roles"][task_id]`); the chosen model is recorded in `meta["models"]`.
+  When the budget policy returns `DOWNGRADE`, the router automatically drops a
+  tier (frontier → balanced), and the cheaper model's rate feeds the cost
+  estimate — so a tightening budget really does cost less per task.
+- **Recovery** — every task runs through `execute_with_recovery`, so a transient
+  failure (e.g. a timeout) retries up the ladder before the task is marked
+  `FAILED`.
+
+Tested end to end: a transient task failure recovers via retry, an exhausted
+`max_llm_calls` budget terminates the mission mid-layer, per-role routing sends an
+analyst task to the frontier model, and a near-spent budget downgrades it to the
+cheaper one.
+
+**Milestone reached:** a budgeted, scheduled, model-routed, self-healing mission.
+
 ## What's coming (per ROADMAP_V2.md)
-All four OS subsystems — scheduler, resources, router, recovery — integrated into
-the tick on Day 11 (the milestone: a budgeted, scheduled, recoverable mission).
-Then the ML anomaly-detection lifecycle and the benchmark.
+Multi-agent roles + critic/replan loop (Day 12), then the ML anomaly-detection
+lifecycle (Days 13–17) and the fault-injection benchmark that produces the real
+demo numbers.
