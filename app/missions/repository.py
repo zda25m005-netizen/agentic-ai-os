@@ -59,6 +59,17 @@ class MissionRepository:
             await s.refresh(row)
             return Mission.from_row(row)
 
+    async def update_meta(self, mission_id: int, meta: dict) -> Mission:
+        """Replace a mission's metadata (used to persist usage/telemetry per tick)."""
+        async with self._sm() as s:
+            row = await s.get(MissionRow, mission_id)
+            if row is None:
+                raise ValueError(f"mission {mission_id} not found")
+            row.meta = meta
+            await s.commit()
+            await s.refresh(row)
+            return Mission.from_row(row)
+
     # --- tasks ---
 
     async def add_task(
