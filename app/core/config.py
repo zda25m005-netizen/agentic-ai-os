@@ -55,6 +55,12 @@ class Settings(BaseSettings):
     worker_enabled: bool = Field(default=True)
     worker_poll_seconds: float = Field(default=2.0)
 
+    # Multi-agent execution (role prompts + critic/replan). Off by default so the
+    # live demo stays fast (one LLM call/task); on = richer, self-critiquing runs.
+    multi_agent_enabled: bool = Field(default=False)
+    critic_threshold: float = Field(default=0.6)
+    max_replans: int = Field(default=1)
+
 
 @lru_cache
 def get_settings() -> Settings:
