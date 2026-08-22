@@ -14,8 +14,9 @@ from pydantic import BaseModel, Field
 
 from app.core import llm
 from app.db import session as db
+from app.missions.agents import build_executor
 from app.missions.builder import build_mission
-from app.missions.executor import TaskExecutor, chat_executor
+from app.missions.executor import TaskExecutor
 from app.missions.models import Mission, Task
 from app.missions.repository import MissionRepository
 from app.missions.runtime import MissionRuntime
@@ -38,7 +39,7 @@ def get_chat_fn() -> ChatFn:
 
 
 def get_executor() -> TaskExecutor:
-    return chat_executor()
+    return build_executor(MissionRepository(db.get_sessionmaker()))
 
 
 # --- schemas ---

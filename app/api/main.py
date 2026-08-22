@@ -20,7 +20,7 @@ from app.feedback import store as feedback_store
 from app.finetune import serving
 from app.graph import fusion
 from app.graph.retrieval import get_graph_context, graph_chunk_hits
-from app.missions.executor import chat_executor
+from app.missions.agents import build_executor
 from app.missions.repository import MissionRepository
 from app.missions.worker import MissionWorker
 from app.obs import health, langfuse_export, logging_setup, tracing
@@ -46,9 +46,10 @@ async def _lifespan(_app: FastAPI):
     stop = asyncio.Event()
     worker_task: asyncio.Task | None = None
     if settings.worker_enabled:
+        repo = MissionRepository(db.get_sessionmaker())
         worker = MissionWorker(
-            MissionRepository(db.get_sessionmaker()),
-            chat_executor(),
+            repo,
+            build_executor(repo),  # multi-agent when enabled, else plain chat
             poll_interval=settings.worker_poll_seconds,
         )
         worker_task = asyncio.create_task(worker.run(stop))
