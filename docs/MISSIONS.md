@@ -254,7 +254,28 @@ cheaper one.
 
 **Milestone reached:** a budgeted, scheduled, model-routed, self-healing mission.
 
+## Multi-agent roles + critic/replan (Day 12 — Phase B capstone)
+
+`app/missions/agents.py` — each task carries a **role** (`meta["roles"]`), and
+`MultiAgentExecutor` runs it with the matching system prompt: a **Researcher**
+gathers facts, an **Analyst** reasons over tradeoffs, an **Executor** just does
+the thing. After generating, a **Critic** (`Critic.review`) judges the output and
+returns a `Verdict(accepted, score, feedback)`; if it's rejected (or below the
+score threshold), the task is regenerated with the critic's feedback — a
+**bounded replan loop** (`max_replans`). A malformed judge response never blocks
+progress (it defaults to accept).
+
+It's a `TaskExecutor`, so it plugs into the same tick that budgets, routes, and
+recovers — the multi-agent step is self-critiquing but otherwise transparent to
+the runtime. `build_executor(repo)` selects it when `multi_agent_enabled` is set
+(off by default so the live demo stays fast at one LLM call per task); the worker
+and the mission endpoints both go through the factory.
+
+**Phase B milestone reached:** a budgeted, scheduled, model-routed, recoverable,
+**multi-agent** mission.
+
 ## What's coming (per ROADMAP_V2.md)
-Multi-agent roles + critic/replan loop (Day 12), then the ML anomaly-detection
-lifecycle (Days 13–17) and the fault-injection benchmark that produces the real
-demo numbers.
+Phase C — the ML anomaly-detection lifecycle (Days 13–17): dataset generation,
+feature engineering, training + experiment tracking, evaluation + registry, and
+serving + monitoring. Then the fault-injection benchmark (Day 20) that produces
+the real demo numbers.
