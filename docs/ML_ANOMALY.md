@@ -114,3 +114,38 @@ two tree models and MLflow tracking.)
 Metric correctness (ROC-AUC extremes, average precision, F1, single-class guard),
 each model separating anomalies above an AUC floor on held-out data, ≥3 models
 available, and the training loop ranking models by PR-AUC and logging every run.
+
+## Day 16 — Evaluation + model registry
+
+`ml/anomaly/evaluate.py` reports metrics **honestly**: models train on **train**,
+the operating **threshold is chosen on validation** (best-F1), and every reported
+number — ROC-AUC, PR-AUC, precision/recall/F1, Brier calibration — is computed on
+the held-out **test** split. The winner is selected by validation PR-AUC (no test
+peeking) and reported on test.
+
+- `best_f1_threshold` / `threshold_at_recall` — pick an operating point.
+- `brier_score` — calibration for probabilistic models (returns `None` for
+  score-based models whose outputs aren't probabilities).
+- `evaluate_all` — the full table + winner.
+
+`ml/anomaly/registry.py` is a tiny **versioned registry**: `save_model` writes a
+new `vN/` directory with the pickled artifact (model + feature pipeline +
+standardizer + threshold), `metrics.json`, and `meta.json`; versions
+auto-increment and `load_model` reloads any version for serving. The evaluate CLI
+promotes the winner automatically:
+
+```bash
+python -m ml.anomaly.evaluate --n 5000 --seed 42
+```
+
+The full run (with scikit-learn installed) compares five models on test, chooses
+the winner by validation PR-AUC, and saves it as `v1`. Because the threshold is
+transferred from validation, some models trade recall for precision on test —
+that honest behavior is exactly what the report surfaces.
+
+### Tested
+
+Threshold selection on separable data (F1 = 1.0), `threshold_at_recall` meeting
+its target, Brier extremes + the non-probability guard, the end-to-end evaluation
+producing a test-set table ranked by PR-AUC with a winner, and a registry
+save/load roundtrip with auto-incrementing versions.
