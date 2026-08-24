@@ -79,6 +79,18 @@ def test_build_models_has_at_least_three():
     assert {"gaussian", "logreg", "autoencoder"} <= set(names)
 
 
+def test_sklearn_wrappers_are_picklable_by_reference():
+    # regression: the registry pickles the winner; local classes can't pickle.
+    # Pickling an unfitted wrapper needs only that the class is module-level.
+    import pickle
+
+    from ml.anomaly.models import GradientBoostingModel, IsolationForestModel
+
+    for cls in (GradientBoostingModel, IsolationForestModel):
+        assert pickle.loads(pickle.dumps(cls)) is cls          # class by reference
+        assert pickle.loads(pickle.dumps(cls())).name == cls.name  # unfitted instance
+
+
 # --- training + tracking ---
 
 def test_train_all_compares_and_ranks_models():

@@ -118,34 +118,40 @@ class AutoencoderNP:
         return ((recon - X) ** 2).mean(axis=1)
 
 
+# NOTE: these wrappers are defined at MODULE level (not inside the factory) so a
+# fitted model is picklable — the registry pickles the winning artifact. sklearn
+# is imported lazily inside fit(), so importing this module never requires it.
+class IsolationForestModel:
+    name = "isolation_forest"
+
+    def fit(self, X, y=None) -> IsolationForestModel:
+        from sklearn.ensemble import IsolationForest
+        self._m = IsolationForest(random_state=0, contamination="auto").fit(X)
+        return self
+
+    def score(self, X):
+        return -self._m.score_samples(X)  # higher = more anomalous
+
+
+class GradientBoostingModel:
+    name = "gradient_boosting"
+
+    def fit(self, X, y) -> GradientBoostingModel:
+        from sklearn.ensemble import GradientBoostingClassifier
+        self._m = GradientBoostingClassifier(random_state=0).fit(X, y)
+        return self
+
+    def score(self, X):
+        return self._m.predict_proba(X)[:, 1]
+
+
 def _optional_sklearn_models() -> list:
-    """IsolationForest + GradientBoosting wrappers, only if sklearn is installed."""
+    """IsolationForest + GradientBoosting instances, only if sklearn is installed."""
     try:
-        from sklearn.ensemble import GradientBoostingClassifier, IsolationForest
+        import sklearn.ensemble  # noqa: F401
     except Exception:
         return []
-
-    class IsoForest:
-        name = "isolation_forest"
-
-        def fit(self, X, y=None):
-            self._m = IsolationForest(random_state=0, contamination="auto").fit(X)
-            return self
-
-        def score(self, X):
-            return -self._m.score_samples(X)  # higher = more anomalous
-
-    class GBoost:
-        name = "gradient_boosting"
-
-        def fit(self, X, y):
-            self._m = GradientBoostingClassifier(random_state=0).fit(X, y)
-            return self
-
-        def score(self, X):
-            return self._m.predict_proba(X)[:, 1]
-
-    return [IsoForest(), GBoost()]
+    return [IsolationForestModel(), GradientBoostingModel()]
 
 
 def build_models() -> list:
