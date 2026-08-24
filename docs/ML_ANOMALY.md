@@ -78,3 +78,39 @@ Fixed 14-d schema, `fit_transform` determinism, transform-before-fit guard,
 **leakage check** (a row transforms identically in isolation vs within its split),
 train-only fit (learned params unchanged by val data), unseen-user global
 fallback, and that the off-hours / rapid flags actually fire on injected anomalies.
+
+## Day 15 — Training + experiment tracking
+
+`ml/anomaly/train.py` fits the feature pipeline on train, standardizes, trains
+every available model, scores the validation split, and logs ROC-AUC + PR-AUC per
+run. Three models are implemented in **pure numpy** so they always run (CI too):
+
+- **GaussianScorer** — unsupervised per-feature Gaussian; summed z-distance.
+- **LogisticRegressionNP** — supervised, class-weighted for imbalance.
+- **AutoencoderNP** — small MLP autoencoder on normal rows; reconstruction error.
+
+Two more — **IsolationForest** and **GradientBoosting** — are added automatically
+when scikit-learn is installed, so a local run compares **five** models and CI
+compares **three**.
+
+**Experiment tracking** (`tracking.py`) uses **MLflow** when installed, else a
+local JSON store under `artifacts/anomaly/runs/` — params/metrics logged either
+way, so runs stay reproducible in CI without the heavy dependency.
+
+### Real numbers (seed 42, n=4000, numpy models)
+
+| model | ROC-AUC | PR-AUC |
+| --- | --- | --- |
+| logreg | 0.980 | 0.884 |
+| gaussian | 0.961 | 0.881 |
+| autoencoder | 0.938 | 0.879 |
+
+These are actual outputs of `python -m ml.anomaly.train`, reproducible from the
+seed — not illustrative placeholders. (Install `scikit-learn mlflow` to add the
+two tree models and MLflow tracking.)
+
+### Tested
+
+Metric correctness (ROC-AUC extremes, average precision, F1, single-class guard),
+each model separating anomalies above an AUC floor on held-out data, ≥3 models
+available, and the training loop ranking models by PR-AUC and logging every run.
