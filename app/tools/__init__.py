@@ -4,6 +4,7 @@ Each submodule uses the @tool decorator, which registers on import — so a
 single `import app.tools` makes all tools available to the agent's loop.
 """
 from app.tools import (  # noqa: F401
+    anomaly_tool,
     calculator,
     clock,
     data_analysis,
