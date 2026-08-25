@@ -9,7 +9,13 @@ objects live in exactly one place (avoids duplicate-registration errors).
 """
 from __future__ import annotations
 
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    Counter,
+    Gauge,
+    Histogram,
+    generate_latest,
+)
 
 REQUESTS = Counter(
     "agentic_requests_total", "HTTP requests", ["endpoint", "method", "status"]
@@ -23,6 +29,15 @@ AGENT_NODE_RUNS = Counter(
     "agentic_agent_node_runs_total", "Agent node executions", ["node"]
 )
 TOOL_CALLS = Counter("agentic_tool_calls_total", "Tool invocations", ["tool"])
+
+# --- anomaly model serving/monitoring ---
+ANOMALY_SCORED = Counter("agentic_anomaly_scored_total", "Transactions scored")
+ANOMALY_FLAGGED = Counter("agentic_anomaly_flagged_total", "Transactions flagged anomalous")
+ANOMALY_SCORE = Histogram(
+    "agentic_anomaly_score", "Anomaly score distribution",
+    buckets=(0.0, 0.25, 0.5, 0.75, 1.0, 2.0, 5.0, 10.0, 50.0, 100.0),
+)
+ANOMALY_DRIFT_PSI = Gauge("agentic_anomaly_drift_psi", "Score PSI vs training reference")
 
 
 def observe_request(endpoint: str, method: str, status: int, seconds: float) -> None:
@@ -48,6 +63,17 @@ def inc_agent_node(node: str) -> None:
 
 def inc_tool(tool: str) -> None:
     TOOL_CALLS.labels(tool=tool).inc()
+
+
+def observe_anomaly(score: float, flagged: bool) -> None:
+    ANOMALY_SCORED.inc()
+    ANOMALY_SCORE.observe(max(0.0, score))
+    if flagged:
+        ANOMALY_FLAGGED.inc()
+
+
+def set_drift_psi(value: float) -> None:
+    ANOMALY_DRIFT_PSI.set(value)
 
 
 def render() -> tuple[bytes, str]:
