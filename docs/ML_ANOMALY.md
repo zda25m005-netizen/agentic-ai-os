@@ -149,3 +149,35 @@ Threshold selection on separable data (F1 = 1.0), `threshold_at_recall` meeting
 its target, Brier extremes + the non-probability guard, the end-to-end evaluation
 producing a test-set table ranked by PR-AUC with a winner, and a registry
 save/load roundtrip with auto-incrementing versions.
+
+## Day 17 — Serving + monitoring + mission integration (Phase C milestone)
+
+The trained model now lives in the running system, not just a notebook.
+
+- **Serving** (`serving.py`) — `Scorer.from_registry()` loads the promoted
+  artifact (model + feature pipeline + standardizer + threshold) and scores a raw
+  transaction dict end to end (missing temporal fields are derived from the
+  timestamp). `anomaly_evidence()` turns a score into a mission-ready evidence
+  record.
+- **Monitoring** (`monitoring.py`) — `psi` (Population Stability Index) and
+  `ks_statistic` detect input/score **drift** vs a training-time reference;
+  `ScoreMonitor` reports drift + distribution summaries. Pure numpy.
+- **Metrics** — `app/obs/metrics.py` adds `agentic_anomaly_scored_total`,
+  `agentic_anomaly_flagged_total`, an `agentic_anomaly_score` histogram, and an
+  `agentic_anomaly_drift_psi` gauge, all scraped at `/metrics` for Grafana.
+- **API** (`app/api/anomaly.py`) — `GET /anomaly/status`, `POST /anomaly/score`
+  (records metrics; 503 if no model is promoted), `POST /anomaly/drift`
+  (PSI/KS + publishes the gauge).
+- **Mission integration** — `anomaly_scan` is a registered agent tool: a mission
+  can score a transaction and get back structured evidence (is_anomaly, score,
+  threshold, model version) to reason over — the "anomaly detected → evidence"
+  step. It degrades gracefully when no model is in the registry.
+
+**Milestone reached:** a real, served, monitored ML model driving agent decisions.
+
+### Tested
+
+`transaction_from_dict` field derivation, a scorer flagging a large amount over a
+normal one, evidence shape, PSI≈0 for identical distributions and >0.25 under a
+shift, KS extremes, `ScoreMonitor` drift flagging, the `/anomaly` endpoints
+(status/score/drift + 503 fallback), and that `anomaly_scan` is registered.
