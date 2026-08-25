@@ -9,6 +9,7 @@ WORKDIR /app
 # Install runtime deps first (better layer caching), then the package.
 COPY pyproject.toml README.md ./
 COPY app ./app
+COPY ml ./ml
 RUN pip install --upgrade pip && pip install .
 
 EXPOSE 8000
