@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 import app.missions.models  # noqa: F401  (register mission tables on Base)
 from app.agents.graph import run_agent
+from app.api.anomaly import router as anomaly_router
 from app.api.missions import router as missions_router
 from app.core import auth, llm
 from app.core.config import get_settings
@@ -77,6 +78,7 @@ app.add_middleware(
 )
 
 app.include_router(missions_router)
+app.include_router(anomaly_router)
 
 
 @app.middleware("http")
