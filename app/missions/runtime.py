@@ -73,10 +73,12 @@ class MissionRuntime:
         executor: TaskExecutor,
         *,
         recovery: RecoveryEngine | None = None,
+        memory=None,  # optional MultiLayerMemory: records an episode per tick
     ):
         self._repo = repo
         self._execute = executor
         self._recovery = recovery or RecoveryEngine(max_attempts=3)
+        self._memory = memory
 
     async def _recover(self, mission_id: int) -> None:
         """Reset tasks stuck in RUNNING (a worker that died mid-step) to PENDING."""
@@ -169,6 +171,13 @@ class MissionRuntime:
             if mgr.evaluate() == BudgetStatus.TERMINATE:  # budget hit mid-layer
                 terminated = True
                 break
+
+        if self._memory is not None and ran:  # episodic trace of this tick
+            self._memory.episodic.record(
+                f"mission {mission_id}: ran {ran}, failed {failed}",
+                tags=("mission", str(mission_id)),
+                importance=1.0 + len(failed),  # failures are more salient
+            )
 
         await self._persist_meta(
             mission, mgr, models, "budget exhausted" if terminated else None
