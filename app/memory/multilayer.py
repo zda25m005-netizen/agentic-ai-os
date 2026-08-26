@@ -37,6 +37,12 @@ class MemoryItem:
     tags: tuple[str, ...] = ()
     importance: float = 1.0
     created_at: float = field(default_factory=time.time)
+    last_access: float = 0.0        # set to created_at on first use
+    access_count: int = 0
+
+    def __post_init__(self) -> None:
+        if not self.last_access:
+            self.last_access = self.created_at
 
     def matches(self, query: str) -> bool:
         q = query.lower()
