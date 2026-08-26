@@ -37,8 +37,29 @@ Working-memory capacity eviction, episodic time order, semantic keyed
 update-not-duplicate, procedural step storage, organizational sharing, unified
 retrieval spanning all layers ranked by importance, and content/key/tag matching.
 
-### What's coming (Day 19)
+## Day 19 — memory dynamics
 
-Memory dynamics: unified retrieval with **importance scoring**, **consolidation**
-(working → long-term), **decay**, and **conflict resolution**, wired into the
-runtime tick so missions accumulate and reuse memory.
+`app/memory/dynamics.py` — `MemoryDynamics` layers real behavior over the static
+stores (all deterministic given an injected `now`):
+
+- **Reinforcement** — `retrieve()` boosts the importance of whatever it returns
+  and records the access, so frequently-used memories stay strong.
+- **Decay** — `decay(now)` shrinks importance exponentially by time since last
+  access and **prunes** items below a threshold. Procedural memory is exempt —
+  learned skills persist.
+- **Consolidation** — `consolidate(now)` promotes high-importance working-memory
+  notes into the episodic log and clears them from the transient scratchpad.
+- **Conflict resolution** — `assert_fact(key, value, importance)` stores a
+  semantic fact, and on a contradiction keeps the **higher-importance** value
+  (ties go to the newer assertion), returning `new / reinforced / overridden /
+  kept_existing`.
+
+**Wired into the runtime:** `MissionRuntime` takes an optional `memory`; when set,
+each tick records an episodic trace of which tasks ran/failed (failures scored
+more salient), so a mission accumulates memory as it executes.
+
+### Tested
+
+Reinforcement on retrieve, exponential decay, prune-but-keep-procedures,
+consolidation of important working notes, the full conflict-resolution policy,
+and a runtime run recording episodic memory.
