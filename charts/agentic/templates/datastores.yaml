@@ -155,3 +155,38 @@ spec:
         resources:
           requests:
             storage: {{ $ds.postgres.storage }}
+---
+# Redis (shared mission queue)
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  labels:
+    app: redis
+spec:
+  clusterIP: None
+  selector:
+    app: redis
+  ports:
+    - name: redis
+      port: 6379
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: {{ $ds.redis.image | quote }}
+          ports:
+            - containerPort: 6379

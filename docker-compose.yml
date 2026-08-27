@@ -35,6 +35,13 @@ services:
       - postgres_storage:/var/lib/postgresql/data
     restart: unless-stopped
 
+  redis:
+    image: redis:7-alpine
+    container_name: agentic-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
   api:
     build: .
     container_name: agentic-api
@@ -47,10 +54,12 @@ services:
       - QDRANT_URL=http://qdrant:6333
       - NEO4J_URI=bolt://neo4j:7687
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/agentic
+      - REDIS_URL=redis://redis:6379/0
     depends_on:
       - qdrant
       - neo4j
       - postgres
+      - redis
     restart: unless-stopped
 
   web:
