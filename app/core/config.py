@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     worker_enabled: bool = Field(default=True)
     worker_poll_seconds: float = Field(default=2.0)
 
+    # Distributed workers: Redis URL for the shared mission queue (empty = in-memory).
+    redis_url: str = Field(default="")
+
     # Multi-agent execution (role prompts + critic/replan). Off by default so the
     # live demo stays fast (one LLM call/task); on = richer, self-critiquing runs.
     multi_agent_enabled: bool = Field(default=False)
