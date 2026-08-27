@@ -69,6 +69,8 @@ class MissionOut(BaseModel):
     settled: int = Field(..., description="tasks that are done/skipped/failed")
     total: int
     tasks: list[TaskOut]
+    usage: dict = Field(default_factory=dict, description="usd/tokens/llm_calls so far")
+    created_at: float | None = None
 
 
 class TickOut(BaseModel):
@@ -93,6 +95,8 @@ def _mission_out(m: Mission, tasks: list[Task]) -> MissionOut:
         id=m.id, objective=m.objective, status=m.status.value, priority=m.priority,
         deadline=m.deadline, settled=settled, total=total,
         tasks=[_task_out(t) for t in tasks],
+        usage=(m.meta.get("usage") or {}) if m.meta else {},
+        created_at=m.created_at,
     )
 
 
