@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { api, MissionOut, TaskOut } from "../../lib/api";
+import { API, api, MissionOut, TaskOut } from "../../lib/api";
 import StatusBadge from "../../components/StatusBadge";
 import TaskGraph from "../../components/TaskGraph";
 
@@ -25,10 +25,36 @@ export default function MissionDetail({ params }: { params: { id: string } }) {
   }, [id]);
 
   useEffect(() => {
-    load();
-    const t = setInterval(load, 1500); // live refresh while a run is in flight
-    return () => clearInterval(t);
-  }, [load]);
+    load(); // initial snapshot
+    let es: EventSource | null = null;
+    let poll: ReturnType<typeof setInterval> | null = null;
+    try {
+      // live push via SSE; fall back to polling if the stream errors
+      es = new EventSource(`${API}/missions/${id}/stream`);
+      es.onmessage = (e) => {
+        try {
+          setMission(JSON.parse(e.data));
+          setError("");
+        } catch {
+          /* ignore malformed frame */
+        }
+      };
+      es.addEventListener("done", () => {
+        es?.close();
+        load();
+      });
+      es.onerror = () => {
+        es?.close();
+        if (!poll) poll = setInterval(load, 1500);
+      };
+    } catch {
+      poll = setInterval(load, 1500);
+    }
+    return () => {
+      es?.close();
+      if (poll) clearInterval(poll);
+    };
+  }, [id, load]);
 
   async function action(name: string, fn: () => Promise<unknown>) {
     if (busy) return;
