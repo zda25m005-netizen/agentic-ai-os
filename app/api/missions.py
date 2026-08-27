@@ -7,9 +7,12 @@ between them and JSON. Dependencies (`get_mission_repo`, `get_chat_fn`,
 """
 from __future__ import annotations
 
+import asyncio
+import json
 from collections.abc import Awaitable, Callable
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.core import llm
@@ -133,6 +136,37 @@ async def get_mission_tasks(
     """Fetch just the tasks of a mission."""
     await _load_or_404(repo, mission_id)
     return [_task_out(t) for t in await repo.get_tasks(mission_id)]
+
+
+@router.get("/{mission_id}/stream")
+async def stream_mission(
+    mission_id: int,
+    interval: float = Query(default=1.0, ge=0.1, le=10.0),  # noqa: B008
+    max_seconds: float = Query(default=600.0, ge=1.0),  # noqa: B008
+    repo: MissionRepository = Depends(get_mission_repo),  # noqa: B008
+) -> StreamingResponse:
+    """Server-Sent Events stream of a mission's live state until it terminates."""
+    await _load_or_404(repo, mission_id)
+
+    async def events():
+        last = None
+        elapsed = 0.0
+        while elapsed <= max_seconds:
+            mission = await repo.get(mission_id)
+            if mission is None:
+                break
+            payload = _mission_out(mission, await repo.get_tasks(mission_id)).model_dump()
+            snap = json.dumps(payload, sort_keys=True)
+            if snap != last:  # only push on change
+                last = snap
+                yield f"data: {snap}\n\n"
+            if mission.status in (MissionStatus.COMPLETED, MissionStatus.FAILED):
+                yield "event: done\ndata: {}\n\n"
+                return
+            await asyncio.sleep(interval)
+            elapsed += interval
+
+    return StreamingResponse(events(), media_type="text/event-stream")
 
 
 # --- create + drive endpoints ---
