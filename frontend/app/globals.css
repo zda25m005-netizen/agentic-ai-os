@@ -334,3 +334,7 @@ button.send:disabled { opacity: 0.5; cursor: default; }
 @media (max-width: 1000px) { .mc-bottom { grid-template-columns: 1fr; } }
 .mc-actions { display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
 .mc-actions .btn { text-align: left; }
+
+/* sidebar groups */
+.nav-group { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+.nav-title { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); padding: 8px 12px 4px; opacity: .7; }
