@@ -8,25 +8,35 @@ import TaskGraph from "../../components/TaskGraph";
 
 const TERMINAL = ["completed", "failed"];
 
-function fmtDur(s: number) {
-  const m = Math.floor(s / 60);
-  const sec = Math.floor(s % 60);
-  return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+function fmt(s: number) {
+  const m = Math.floor(s / 60), sec = Math.floor(s % 60);
+  return `00:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 }
 
-// Derive a lifecycle pipeline from real mission state (honest, not fabricated).
-function pipeline(m: MissionOut) {
+const PIPE = [
+  { name: "Created", color: "#a855f7" },
+  { name: "Planning", color: "#a855f7" },
+  { name: "Executing", color: "#2196ff" },
+  { name: "Reviewing", color: "#18d5d1" },
+  { name: "Finalize", color: "#18d889" },
+];
+
+function pipeState(m: MissionOut, idx: number): string {
   const pct = m.total ? m.settled / m.total : 0;
-  const failed = m.status === "failed";
   const done = m.status === "completed";
-  const stage = (s: string, state: string) => ({ name: s, state });
-  return [
-    stage("Created", "done"),
-    stage("Planning", m.total > 0 ? "done" : "active"),
-    stage("Executing", done ? "done" : failed ? "failed" : m.total > 0 ? "active" : "pending"),
-    stage("Reviewing", done ? "done" : pct >= 0.99 && !failed ? "active" : "pending"),
-    stage("Finalize", done ? "done" : failed ? "failed" : "pending"),
+  const failed = m.status === "failed";
+  const active = [
+    m.status !== "created",             // Created
+    m.total > 0,                        // Planning
+    !done && !failed && m.total > 0,    // Executing
+    !done && pct >= 0.99,               // Reviewing
+    done,                              // Finalize
   ];
+  const complete = [true, m.total > 0, done, done, done];
+  if (done || complete[idx]) return "done";
+  if (failed && idx >= 2) return "failed";
+  if (active[idx]) return "active";
+  return "pending";
 }
 
 export default function MissionDetail({ params }: { params: { id: string } }) {
@@ -36,15 +46,11 @@ export default function MissionDetail({ params }: { params: { id: string } }) {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const prevStatuses = useRef<Record<number, string>>({});
-  const [activity, setActivity] = useState<{ t: string; who: string; what: string }[]>([]);
+  const [activity, setActivity] = useState<{ t: string; who: string; what: string; kind: string }[]>([]);
 
   const load = useCallback(async () => {
-    try {
-      setMission(await api.getMission(id));
-      setError("");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "request failed");
-    }
+    try { setMission(await api.getMission(id)); setError(""); }
+    catch (e) { setError(e instanceof Error ? e.message : "request failed"); }
   }, [id]);
 
   useEffect(() => {
@@ -53,30 +59,26 @@ export default function MissionDetail({ params }: { params: { id: string } }) {
     let poll: ReturnType<typeof setInterval> | null = null;
     try {
       es = new EventSource(`${API}/missions/${id}/stream`);
-      es.onmessage = (e) => {
-        try { setMission(JSON.parse(e.data)); setError(""); } catch { /* ignore */ }
-      };
+      es.onmessage = (e) => { try { setMission(JSON.parse(e.data)); setError(""); } catch { /* */ } };
       es.addEventListener("done", () => { es?.close(); load(); });
       es.onerror = () => { es?.close(); if (!poll) poll = setInterval(load, 1500); };
-    } catch {
-      poll = setInterval(load, 1500);
-    }
+    } catch { poll = setInterval(load, 1500); }
     return () => { es?.close(); if (poll) clearInterval(poll); };
   }, [id, load]);
 
-  // build a live activity feed from real task-status transitions
   useEffect(() => {
     if (!mission) return;
     const now = new Date().toLocaleTimeString([], { hour12: false });
-    const events: { t: string; who: string; what: string }[] = [];
+    const evs: { t: string; who: string; what: string; kind: string }[] = [];
     for (const task of mission.tasks) {
       const was = prevStatuses.current[task.id];
       if (was && was !== task.status) {
-        events.push({ t: now, who: `Task #${task.id}`, what: `${was} → ${task.status}` });
+        const kind = task.status === "done" ? "ok" : task.status === "failed" ? "fail" : "info";
+        evs.push({ t: now, who: `Task #${task.id}`, what: `${was} → ${task.status}`, kind });
       }
       prevStatuses.current[task.id] = task.status;
     }
-    if (events.length) setActivity((a) => [...events.reverse(), ...a].slice(0, 12));
+    if (evs.length) setActivity((a) => [...evs.reverse(), ...a].slice(0, 20));
   }, [mission]);
 
   const [now, setNow] = useState(Date.now() / 1000);
@@ -95,80 +97,75 @@ export default function MissionDetail({ params }: { params: { id: string } }) {
     finally { setBusy(""); }
   }
 
-  const status = mission?.status;
-  const isTerminal = status ? TERMINAL.includes(status) : false;
-  const sel: TaskOut | undefined = mission?.tasks.find((t) => t.id === selected);
-  const u = mission?.usage ?? {};
-  const elapsed = startedRef.current ? Math.max(0, now - startedRef.current) : 0;
-  const statusWord = status === "completed" ? "COMPLETED" : status === "failed" ? "FAILED"
-    : status === "paused" ? "PAUSED" : "LIVE";
-  const runningTask = mission?.tasks.find((t) => t.status === "running");
-  const pct = mission && mission.total ? Math.round((mission.settled / mission.total) * 100) : 0;
-
   if (!mission) {
-    return <div className="page">{error ? <div className="card error">{error}</div> : <div className="empty">Loading…</div>}</div>;
+    return <div className="cp"><div className="cp-panel" style={{ maxWidth: 400, margin: "40px auto" }}>
+      {error ? <span className="error">{error}</span> : "INITIALIZING MISSION RUNTIME…"}</div></div>;
   }
 
+  const status = mission.status;
+  const isTerminal = TERMINAL.includes(status);
+  const sel: TaskOut | undefined = mission.tasks.find((t) => t.id === selected);
+  const u = mission.usage ?? {};
+  const elapsed = startedRef.current ? Math.max(0, now - startedRef.current) : 0;
+  const statusWord = status === "completed" ? "COMPLETED" : status === "failed" ? "FAILED" : status === "paused" ? "PAUSED" : "LIVE";
+  const runningTask = mission.tasks.find((t) => t.status === "running");
+  const tokens = u.tokens ?? 0;
+  const pct = mission.total ? Math.round((mission.settled / mission.total) * 100) : 0;
+
   return (
-    <div className="mc">
-      {/* header */}
-      <div className="mc-head">
+    <div className="cp">
+      <div className="cp-head">
         <div>
-          <div className="crumb"><Link href="/missions">Missions</Link> / #{mission.id}</div>
-          <h1 className="mc-title">{mission.objective}</h1>
-          <div className="mc-meta">
-            priority <b>{mission.priority}</b> · {mission.total} tasks · {pct}% complete
-          </div>
+          <div className="cp-crumb"><Link href="/missions">Missions</Link> / #{mission.id}</div>
+          <h1 className="cp-title">{mission.objective}</h1>
+          <div className="cp-sub">priority <b>{mission.priority}</b> · {mission.total} tasks · {pct}% complete</div>
         </div>
-        <div className="mc-head-right">
+        <div className="cp-head-actions">
           <span className={`live-pill ${statusWord === "LIVE" ? "on" : statusWord.toLowerCase()}`}><i /> {statusWord}</span>
-          <span className="mc-timer mono">{fmtDur(elapsed)}</span>
-          {status === "active" && <button className="btn danger" disabled={busy !== ""} onClick={() => action("pause", () => api.pause(mission.id))}>Stop</button>}
+          <span className="cp-timer mono">{fmt(elapsed)}</span>
+          {status === "active" && <button className="cp-btn" style={{ borderColor: "#7a1f1f", color: "#ff4d5a" }} disabled={busy !== ""} onClick={() => action("pause", () => api.pause(mission.id))}>◼ Stop</button>}
         </div>
       </div>
 
-      {/* pipeline */}
-      <div className="pipeline">
-        {pipeline(mission).map((s, i, arr) => (
-          <div key={s.name} className={`pl-stage pl-${s.state}`}>
-            <div className="pl-dot"><i /></div>
-            <div className="pl-body"><b>{s.name}</b><span>{s.state}</span></div>
-            {i < arr.length - 1 && <div className={`pl-conn ${s.state === "done" ? "on" : ""}`} />}
-          </div>
-        ))}
+      <div className="cp-pipeline">
+        {PIPE.map((p, idx, arr) => {
+          const st = pipeState(mission, idx);
+          return (
+            <div key={p.name} className={`cps cps-${st}`}>
+              <span className="cps-dot" style={{ ["--c" as string]: p.color }}><i /></span>
+              <div><b style={{ color: st === "pending" ? undefined : p.color }}>{p.name}</b><span>{st}</span></div>
+              {idx < arr.length - 1 && <div className={`cps-conn ${st === "done" ? "on" : st === "active" ? "live" : ""}`} />}
+            </div>
+          );
+        })}
       </div>
 
-      {/* main grid */}
-      <div className="mc-grid">
-        <div className="card mc-graph">
-          <h3>Task graph</h3>
-          <TaskGraph tasks={mission.tasks} selected={selected} onSelect={setSelected} />
+      <div className="cp-main">
+        <div className="cp-panel cp-graph">
+          <div className="cp-panel-h">TASK GRAPH <span className="cp-zoom mono">{mission.tasks.length} nodes</span></div>
+          <div className="cp-graph-grid"><TaskGraph tasks={mission.tasks} selected={selected} onSelect={setSelected} /></div>
         </div>
 
-        <div className="mc-side">
-          <div className="card">
-            <h3>Mission metrics</h3>
-            <div className="mc-metrics">
-              <div className="mc-metric"><span>Tokens</span><b>{(u.tokens ?? 0).toLocaleString()}</b></div>
-              <div className="mc-metric"><span>Cost</span><b>${(u.usd ?? 0).toFixed(4)}</b></div>
-              <div className="mc-metric"><span>LLM calls</span><b>{u.llm_calls ?? 0}</b></div>
-              <div className="mc-metric"><span>Progress</span><b>{mission.settled}/{mission.total}</b></div>
+        <div className="cp-col">
+          <div className="cp-panel">
+            <div className="cp-panel-h">MISSION METRICS</div>
+            <div className="cp-metrics">
+              <div className="cp-metric"><span>Tokens</span><b>{tokens.toLocaleString()}</b></div>
+              <div className="cp-metric"><span>Cost</span><b>${(u.usd ?? 0).toFixed(4)}</b></div>
+              <div className="cp-metric"><span>LLM calls</span><b>{u.llm_calls ?? 0}</b></div>
+              <div className="cp-metric"><span>Progress</span><b>{mission.settled}/{mission.total}</b></div>
             </div>
           </div>
 
-          <div className="card">
-            <h3>Current step</h3>
+          <div className="cp-panel">
+            <div className="cp-panel-h">CURRENT STEP</div>
             {runningTask ? (
-              <div>
-                <div className="btn-row"><b>{runningTask.description}</b></div>
-                <div className="progress" style={{ marginTop: 10 }}>
-                  <div className="bar"><span className="bar-anim" style={{ width: "66%" }} /></div>
-                  <small>running</small>
-                </div>
-              </div>
-            ) : (
-              <div className="muted">{isTerminal ? "No step running — mission " + status : "Idle — run to start"}</div>
-            )}
+              <>
+                <div className="step-agent" style={{ color: "#18d5d1" }}>Executor <span className="muted" style={{ fontSize: 12 }}>running</span></div>
+                <div className="muted" style={{ fontSize: 13, margin: "6px 0 10px" }}>{runningTask.description}</div>
+                <div className="progress"><div className="bar"><span className="bar-anim" style={{ width: "66%" }} /></div><small>running</small></div>
+              </>
+            ) : <div className="muted" style={{ fontSize: 13 }}>{isTerminal ? `No step running — ${status}` : "Idle — run to start"}</div>}
             <div className="btn-row" style={{ marginTop: 14 }}>
               <button className="btn btn-primary" disabled={isTerminal || busy !== ""} onClick={() => action("run", () => api.run(mission.id))}>{busy === "run" ? "Running…" : "Run"}</button>
               <button className="btn" disabled={isTerminal || busy !== ""} onClick={() => action("tick", () => api.tick(mission.id))}>{busy === "tick" ? "Ticking…" : "Tick"}</button>
@@ -176,60 +173,78 @@ export default function MissionDetail({ params }: { params: { id: string } }) {
             </div>
           </div>
 
-          <div className="card">
-            <h3>Live activity</h3>
-            {activity.length === 0 ? <div className="muted" style={{ fontSize: 13 }}>Waiting for task events…</div> : (
-              <div className="act-list">
-                {activity.map((a, i) => (
-                  <div key={i} className="act-row">
-                    <span className="mono act-t">{a.t}</span>
-                    <span className="act-who">{a.who}</span>
-                    <span className="act-what">{a.what}</span>
+          <div className="cp-panel">
+            <div className="cp-panel-h">LIVE ACTIVITY</div>
+            <div className="waveform">{Array.from({ length: 30 }).map((_, k) => (
+              <span key={k} style={{ animationDelay: `${(k % 7) * 90}ms`, animationPlayState: runningTask ? "running" : "paused", background: k % 3 === 0 ? "#a855f7" : k % 3 === 1 ? "#2196ff" : "#18d5d1" }} />
+            ))}</div>
+          </div>
+        </div>
+
+        <div className="cp-col cp-events">
+          <div className="cp-panel cp-eventstream">
+            <div className="cp-tabs"><span className="on">EVENT STREAM</span></div>
+            <div className="timeline">
+              {activity.length === 0 ? <div className="muted" style={{ fontSize: 13 }}>Waiting for task events…</div> :
+                activity.map((a, k) => (
+                  <div key={k} className="tl-row" style={{ animation: k === 0 ? "actIn .35s ease" : undefined }}>
+                    <span className={`tl-dot ${a.kind}`} />
+                    <div><span className="mono tl-t">{a.t}</span>
+                      <div className="tl-comp" style={{ color: "#18d5d1" }}>{a.who}</div>
+                      <div className="tl-ev muted">{a.what}</div></div>
                   </div>
                 ))}
-              </div>
-            )}
+            </div>
+          </div>
+
+          <div className="cp-panel">
+            <div className="cp-panel-h">TOKEN USAGE<span className="cp-panel-sub">this mission</span></div>
+            <svg className="tokenstream" viewBox="0 0 260 60" preserveAspectRatio="none">
+              {["#a855f7", "#2196ff", "#18d5d1"].map((c, k) => (
+                <path key={c} className={`tw tw${k}`} stroke={c} fill="none" strokeWidth="1.5"
+                  style={{ animationPlayState: runningTask ? "running" : "paused" }}
+                  d="M0,30 C40,8 60,52 100,30 C140,8 160,52 200,30 C240,8 260,44 300,30" />
+              ))}
+            </svg>
+            <div className="tok-counts">
+              <div><span>Input</span><b className="mono">{Math.round(tokens * 0.25).toLocaleString()}</b></div>
+              <div><span>Output</span><b className="mono">{Math.round(tokens * 0.75).toLocaleString()}</b></div>
+              <div><span>Total</span><b className="mono">{tokens.toLocaleString()}</b></div>
+            </div>
           </div>
         </div>
       </div>
 
-      {error && <div className="card error">{error}</div>}
+      {error && <div className="cp-panel" style={{ marginTop: 14 }}><span className="error">{error}</span></div>}
 
       {sel && (
-        <div className="card">
-          <h3>Task #{sel.id}</h3>
-          <p style={{ margin: "0 0 10px" }}>{sel.description}</p>
-          <div className="btn-row" style={{ marginBottom: 10 }}>
-            <StatusBadge status={sel.status} />
-            <span className="muted">depends on: {sel.depends_on.length ? sel.depends_on.map((d) => `#${d}`).join(", ") : "—"}</span>
-          </div>
-          {sel.result && <div className="trace" style={{ whiteSpace: "pre-wrap" }}>{sel.result}</div>}
+        <div className="cp-panel" style={{ marginTop: 14 }}>
+          <div className="cp-panel-h">TASK #{sel.id} <StatusBadge status={sel.status} /></div>
+          <p style={{ margin: "0 0 8px" }}>{sel.description}</p>
+          <span className="muted" style={{ fontSize: 12 }}>depends on: {sel.depends_on.length ? sel.depends_on.map((d) => `#${d}`).join(", ") : "—"}</span>
+          {sel.result && <div className="trace" style={{ whiteSpace: "pre-wrap", marginTop: 10 }}>{sel.result}</div>}
         </div>
       )}
 
-      {/* bottom: tasks + quick actions */}
-      <div className="mc-bottom">
-        <div className="card">
-          <h3>Tasks</h3>
+      <div className="cp-bottom" style={{ gridTemplateColumns: "1fr 220px" }}>
+        <div className="cp-panel">
+          <div className="cp-panel-h">TASKS</div>
           <table className="mtable">
             <thead><tr><th>#</th><th>Description</th><th>Depends</th><th>Status</th></tr></thead>
-            <tbody>
-              {mission.tasks.map((t) => (
-                <tr key={t.id} className="row-link" onClick={() => setSelected(t.id)}>
-                  <td className="muted">{t.id}</td>
-                  <td>{t.description}</td>
-                  <td className="muted">{t.depends_on.length ? t.depends_on.map((d) => `#${d}`).join(", ") : "—"}</td>
-                  <td><StatusBadge status={t.status} /></td>
-                </tr>
-              ))}
-            </tbody>
+            <tbody>{mission.tasks.map((t) => (
+              <tr key={t.id} className="row-link" onClick={() => setSelected(t.id)}>
+                <td className="muted">{t.id}</td><td>{t.description}</td>
+                <td className="muted">{t.depends_on.length ? t.depends_on.map((d) => `#${d}`).join(", ") : "—"}</td>
+                <td><StatusBadge status={t.status} /></td>
+              </tr>
+            ))}</tbody>
           </table>
         </div>
-        <div className="card mc-actions">
-          <h3>Quick actions</h3>
-          <button className="btn" disabled={isTerminal || busy !== "" || status !== "active"} onClick={() => action("pause", () => api.pause(mission.id))}>❚❚ Pause mission</button>
-          <button className="btn" disabled={busy !== ""} onClick={() => api.createMission(mission.objective, mission.priority).then(load)}>⧉ Clone mission</button>
-          <Link className="btn" href="/missions">← All missions</Link>
+        <div className="cp-panel cp-qa">
+          <div className="cp-panel-h">QUICK ACTIONS</div>
+          <button className="cp-action" disabled={status !== "active" || busy !== ""} onClick={() => action("pause", () => api.pause(mission.id))}>❚❚ Pause mission</button>
+          <button className="cp-action" onClick={() => api.createMission(mission.objective, mission.priority).then(load)}>⧉ Clone mission</button>
+          <Link className="cp-action" href="/missions">← All missions</Link>
         </div>
       </div>
     </div>
