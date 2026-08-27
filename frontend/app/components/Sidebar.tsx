@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 // active; the rest are placeholders on the roadmap (Days 26–30) and marked so.
 const NAV: { href: string; label: string; soon?: boolean }[] = [
   { href: "/", label: "Overview" },
+  { href: "/workspace", label: "Mission Workspace" },
   { href: "/missions", label: "Missions" },
   { href: "/playground", label: "Playground" },
   { href: "/agents", label: "Agents", soon: true },
