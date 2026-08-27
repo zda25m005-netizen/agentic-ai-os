@@ -45,15 +45,43 @@ export interface DemoStep {
 }
 
 export const NODES: GraphNode[] = [
-  { id: "goal", label: "GOAL", x: 450, y: 34 },
-  { id: "planner", label: "PLANNER", x: 450, y: 120 },
-  { id: "research", label: "RESEARCH", sub: "web_search", x: 230, y: 230 },
-  { id: "rag", label: "RAG", sub: "hybrid + rerank", x: 450, y: 230 },
-  { id: "memory", label: "MEMORY", sub: "recall", x: 670, y: 230 },
-  { id: "executor", label: "EXECUTOR", x: 450, y: 340 },
-  { id: "critic", label: "CRITIC", x: 450, y: 430 },
-  { id: "result", label: "RESULT", x: 450, y: 508 },
+  { id: "goal", label: "GOAL", sub: "analyze AI strategy", x: 450, y: 34 },
+  { id: "planner", label: "PLANNER", sub: "build execution plan", x: 450, y: 120 },
+  { id: "research", label: "WEB SEARCH", sub: "latest AI info", x: 230, y: 230 },
+  { id: "rag", label: "RAG RETRIEVAL", sub: "hybrid + rerank", x: 450, y: 230 },
+  { id: "memory", label: "KNOWLEDGE GRAPH", sub: "entity relations", x: 690, y: 230 },
+  { id: "executor", label: "ANALYSIS AGENT", sub: "compare strategies", x: 450, y: 340 },
+  { id: "critic", label: "CRITIC", sub: "evaluate quality", x: 450, y: 430 },
+  { id: "result", label: "FINAL ANSWER", sub: "synthesize report", x: 450, y: 512 },
 ];
+
+export type Role = "Planner" | "Research Agent" | "RAG Agent" | "Analysis Agent" | "Critic";
+
+// Agent conversation entries, revealed as the run advances (by step index).
+export const CONVERSATION: { at: number; role: Role; text: string }[] = [
+  { at: 1, role: "Planner", text: "Breaking this into research, analysis and comparison tasks…" },
+  { at: 3, role: "Research Agent", text: "Searching for the latest NVIDIA / AMD / Intel AI strategy…" },
+  { at: 4, role: "RAG Agent", text: "Found 18 relevant documents in the knowledge base." },
+  { at: 6, role: "Analysis Agent", text: "Analyzing strengths, weaknesses and market positioning…" },
+  { at: 8, role: "Critic", text: "Intel evidence is thin — requesting one more source." },
+  { at: 11, role: "Analysis Agent", text: "Added Gaudi/foundry sources; comparison now complete." },
+];
+
+// Tool calls; each completes at a given step (before that it's running).
+export const TOOL_CALLS: { name: string; desc: string; latency: string; doneAt: number }[] = [
+  { name: "Web Search", desc: "external search", latency: "1.7s", doneAt: 4 },
+  { name: "RAG Retrieval", desc: "hybrid + rerank", latency: "1.3s", doneAt: 5 },
+  { name: "Knowledge Graph", desc: "k-hop query", latency: "892ms", doneAt: 6 },
+  { name: "LLM Analysis", desc: "GPT-4o completion", latency: "2.1s", doneAt: 7 },
+];
+
+export const ROLE_COLOR: Record<Role, string> = {
+  Planner: "#a855f7",
+  "Research Agent": "#2196ff",
+  "RAG Agent": "#18d5d1",
+  "Analysis Agent": "#18d5d1",
+  Critic: "#f5b82e",
+};
 
 export const EDGES: GraphEdge[] = [
   { from: "goal", to: "planner" },
