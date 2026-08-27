@@ -79,6 +79,9 @@ app.add_middleware(
 
 app.include_router(missions_router)
 app.include_router(anomaly_router)
+# Versioned API surface (same routers under /v1) for stable clients.
+app.include_router(missions_router, prefix="/v1")
+app.include_router(anomaly_router, prefix="/v1")
 
 
 @app.middleware("http")
