@@ -250,3 +250,36 @@ button.send:disabled { opacity: 0.5; cursor: default; }
 @media (prefers-reduced-motion: reduce) {
   .gnode-running rect, .gnode-spin, .gnode-failed { animation: none; }
 }
+
+/* ---------- Mission Detail — control-room ---------- */
+.mc-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 14px; flex-wrap: wrap; }
+.mc-head-right { display: flex; align-items: center; gap: 12px; }
+.live-pill { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 700;
+  letter-spacing: .08em; padding: 4px 11px; border-radius: 999px; border: 1px solid #164e5b;
+  color: #22d3ee; background: #08191f; }
+.live-pill i { width: 7px; height: 7px; border-radius: 50%; background: #22d3ee; }
+.live-pill.on i { animation: livePulse 1.3s ease-in-out infinite; }
+.live-pill.completed { color: #22c55e; border-color: #1f7a44; background: #08160e; }
+.live-pill.completed i { background: #22c55e; animation: none; }
+.live-pill.failed { color: #f87171; border-color: #7a1f1f; background: #170808; }
+.live-pill.failed i { background: #f87171; animation: none; }
+.live-pill.paused { color: #d0904f; border-color: #5c421e; background: #1c1408; }
+.live-pill.paused i { background: #d0904f; animation: none; }
+.mc-timer { font-size: 15px; color: var(--text); font-variant-numeric: tabular-nums; }
+@keyframes livePulse { 0%,100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34,211,238,.5); } 50% { opacity: .5; box-shadow: 0 0 0 5px rgba(34,211,238,0); } }
+
+.mc-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.mc-metric { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+.mc-metric span { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+.mc-metric b { font-size: 19px; font-variant-numeric: tabular-nums; }
+
+/* graph live animations */
+.graph-edge-live { stroke: #22d3ee; stroke-width: 2; }
+.graph-flow-dot { fill: #22d3ee; filter: drop-shadow(0 0 4px #22d3ee); }
+.gn-running rect { animation: gnPulse 1.5s ease-in-out infinite; }
+.gn-dot { fill: #22d3ee; animation: gnPulse .9s ease-in-out infinite; }
+.gn-check { fill: #22c55e; font-size: 13px; font-weight: 700; }
+@keyframes gnPulse { 0%,100% { opacity: 1; } 50% { opacity: .5; } }
+@media (prefers-reduced-motion: reduce) {
+  .gn-running rect, .gn-dot, .live-pill.on i { animation: none; }
+}

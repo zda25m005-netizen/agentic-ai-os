@@ -26,6 +26,13 @@ export type TaskOut = {
   result: string | null;
 };
 
+export type Usage = {
+  usd?: number;
+  tokens?: number;
+  tool_calls?: number;
+  llm_calls?: number;
+};
+
 export type MissionOut = {
   id: number;
   objective: string;
@@ -35,6 +42,8 @@ export type MissionOut = {
   settled: number;
   total: number;
   tasks: TaskOut[];
+  usage?: Usage;
+  created_at?: number | null;
 };
 
 export type TickOut = {

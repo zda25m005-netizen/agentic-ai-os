@@ -91,12 +91,20 @@ export default function TaskGraph({
               const x2 = t.x;
               const y2 = t.y + NH / 2;
               const mx = (x1 + x2) / 2;
+              const eid = `te-${d}-${t.id}`;
+              const live = t.status === "running"; // data flowing into a running task
+              const dd = `M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`;
               return (
-                <path
-                  key={`${d}-${t.id}`}
-                  className="graph-edge"
-                  d={`M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`}
-                />
+                <g key={eid}>
+                  <path id={eid} className={`graph-edge ${live ? "graph-edge-live" : ""}`} d={dd} />
+                  {live && (
+                    <circle r="4" className="graph-flow-dot">
+                      <animateMotion dur="1s" repeatCount="indefinite">
+                        <mpath href={`#${eid}`} />
+                      </animateMotion>
+                    </circle>
+                  )}
+                </g>
               );
             })
         )}
@@ -106,7 +114,7 @@ export default function TaskGraph({
           return (
             <g
               key={t.id}
-              className="graph-node"
+              className={`graph-node gn-${t.status}`}
               transform={`translate(${t.x}, ${t.y})`}
               onClick={() => onSelect?.(t.id)}
               style={{ cursor: onSelect ? "pointer" : "default" }}
@@ -119,6 +127,8 @@ export default function TaskGraph({
                 stroke={isSel ? "#4f8cff" : STROKE[t.status]}
                 strokeWidth={isSel ? 2.5 : 1.5}
               />
+              {t.status === "running" && <circle cx={NW - 13} cy={13} r={4} className="gn-dot" />}
+              {t.status === "done" && <text x={NW - 18} y={17} className="gn-check">✓</text>}
               <text x={14} y={22}>
                 {t.description.length > 26 ? t.description.slice(0, 25) + "…" : t.description}
               </text>

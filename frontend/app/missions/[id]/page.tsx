@@ -1,12 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { API, api, MissionOut, TaskOut } from "../../lib/api";
 import StatusBadge from "../../components/StatusBadge";
 import TaskGraph from "../../components/TaskGraph";
 
 const TERMINAL = ["completed", "failed"];
+
+function fmtDur(s: number) {
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+}
 
 export default function MissionDetail({ params }: { params: { id: string } }) {
   const id = Number(params.id);
@@ -70,9 +76,24 @@ export default function MissionDetail({ params }: { params: { id: string } }) {
     }
   }
 
+  // live elapsed timer (from created_at, ticking while running)
+  const [now, setNow] = useState(Date.now() / 1000);
+  const startedRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (mission?.created_at && startedRef.current === null) startedRef.current = mission.created_at;
+    const t = setInterval(() => setNow(Date.now() / 1000), 1000);
+    return () => clearInterval(t);
+  }, [mission?.created_at]);
+
   const status = mission?.status;
   const isTerminal = status ? TERMINAL.includes(status) : false;
+  const isRunning = status === "active" || status === "created";
   const sel: TaskOut | undefined = mission?.tasks.find((t) => t.id === selected);
+  const u = mission?.usage ?? {};
+  const elapsed = startedRef.current ? Math.max(0, now - startedRef.current) : 0;
+  const statusWord = status === "completed" ? "COMPLETED" : status === "failed" ? "FAILED"
+    : status === "paused" ? "PAUSED" : "LIVE";
+  const running = mission?.tasks.filter((t) => t.status === "running").length ?? 0;
 
   return (
     <div className="page">
@@ -84,15 +105,28 @@ export default function MissionDetail({ params }: { params: { id: string } }) {
 
       {mission && (
         <>
-          <div className="page-head">
+          <div className="mc-head">
             <div>
               <h1 className="page-title">{mission.objective}</h1>
               <p className="page-sub">
-                Mission #{mission.id} · priority {mission.priority} ·{" "}
-                {mission.settled}/{mission.total} tasks settled
+                Mission #{mission.id} · priority {mission.priority} · {mission.total} tasks
+                {running > 0 && <> · {running} running</>}
               </p>
             </div>
-            <StatusBadge status={mission.status} />
+            <div className="mc-head-right">
+              <span className={`live-pill ${statusWord === "LIVE" ? "on" : statusWord.toLowerCase()}`}>
+                <i /> {statusWord}
+              </span>
+              <span className="mc-timer mono">{fmtDur(elapsed)}</span>
+            </div>
+          </div>
+
+          <div className="mc-metrics">
+            <div className="mc-metric"><span>Progress</span><b>{mission.settled}/{mission.total}</b></div>
+            <div className="mc-metric"><span>Tokens</span><b>{(u.tokens ?? 0).toLocaleString()}</b></div>
+            <div className="mc-metric"><span>Cost</span><b>${(u.usd ?? 0).toFixed(4)}</b></div>
+            <div className="mc-metric"><span>LLM calls</span><b>{u.llm_calls ?? 0}</b></div>
+            <div className="mc-metric"><span>Status</span><b><StatusBadge status={mission.status} /></b></div>
           </div>
 
           <div className="card">
