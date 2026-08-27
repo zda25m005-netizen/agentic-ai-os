@@ -292,7 +292,26 @@ This closes the reliability loop: the fault-injection benchmark (Day 20) surface
 where strategies fail, and the policy engine reorders strategies to prefer the
 ones that actually recover — a self-improving runtime.
 
+## Distributed workers + shared queue (Day 22)
+
+`app/missions/queue.py` + `queue_worker.py` — to scale past one process, workers
+pull missions from a **shared queue** instead of each polling the DB. The queue
+has lease semantics: `enqueue` (deduplicated), `claim` (pop + lease so a mission
+is in-flight for exactly one worker), `complete` (drop the lease), `release`
+(return for retry). Two backends behind one interface:
+
+- **InMemoryQueue** — default, single-process, CI-safe.
+- **RedisQueue** — Redis lists + sets for cross-process coordination.
+
+`build_queue(redis_url)` returns the Redis queue when a URL is configured and the
+client imports, else in-memory. `QueueWorker` claims a mission, ticks one DAG
+layer, then completes it (terminal/paused) or re-enqueues it — so N workers share
+the load and the lease guarantees no mission is processed twice at once (tested:
+a second worker claiming a leased mission gets nothing).
+
+Redis ships in `docker-compose.yml` and the Helm chart (`REDIS_URL` config); set
+`REDIS_URL` to switch from the in-memory queue to distributed workers.
+
 ## What's coming (per ROADMAP_V2.md)
-Phase E–F — real-time (Redis workers, SSE) and the control-plane UI (mission
-graph, evaluation lab, observability), a public landing + live demo, then deploy
-and the v2.0.0 release.
+Phase E–F — real-time SSE + the control-plane UI (mission graph, evaluation lab,
+observability), a public landing + live demo, then deploy and the v2.0.0 release.
