@@ -274,8 +274,25 @@ and the mission endpoints both go through the factory.
 **Phase B milestone reached:** a budgeted, scheduled, model-routed, recoverable,
 **multi-agent** mission.
 
+## Self-improving policy engine (Day 21)
+
+`app/missions/policy.py` — a *policy* is an ordered set of candidate strategies
+for a context (an error type, a task category, a tool/model choice). Each use is
+recorded as success/failure, and strategies are ranked by a **Beta(1,1)-smoothed
+success rate**, so a candidate that keeps working is **promoted** and one that
+keeps failing is **demoted** — the runtime learns which strategy to try first
+with no manual tuning.
+
+The smoothing gives two properties worth noting: an **untried** strategy starts at
+0.5 (explored before a proven-bad one), and a single fluke win/loss can't flip the
+order. `select` is a deterministic argmax (reproducible/testable), and the engine
+serializes to/from a dict so learned orderings persist across runs.
+
+This closes the reliability loop: the fault-injection benchmark (Day 20) surfaces
+where strategies fail, and the policy engine reorders strategies to prefer the
+ones that actually recover — a self-improving runtime.
+
 ## What's coming (per ROADMAP_V2.md)
-Phase C — the ML anomaly-detection lifecycle (Days 13–17): dataset generation,
-feature engineering, training + experiment tracking, evaluation + registry, and
-serving + monitoring. Then the fault-injection benchmark (Day 20) that produces
-the real demo numbers.
+Phase E–F — real-time (Redis workers, SSE) and the control-plane UI (mission
+graph, evaluation lab, observability), a public landing + live demo, then deploy
+and the v2.0.0 release.
