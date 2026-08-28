@@ -8,12 +8,27 @@ malicious `\\write18` inert and bound runaway compiles.
 """
 from __future__ import annotations
 
+import glob
+import os
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 
 _ENGINES = ("pdflatex",)
+
+# Standard TeX bin locations to check when the engine isn't on PATH. This makes
+# the server find pdflatex even when uvicorn was launched from a shell whose
+# PATH predates a MacTeX/BasicTeX/TeX Live install.
+_TEX_DIRS = (
+    "/Library/TeX/texbin",                       # macOS MacTeX / BasicTeX symlinks
+    "/opt/homebrew/bin", "/usr/local/bin",       # Homebrew
+    "/usr/bin",
+)
+_TEX_GLOBS = (
+    "/usr/local/texlive/*/bin/*",                # Linux / macOS TeX Live
+    "/opt/texlive/*/bin/*",
+)
 
 
 class LatexUnavailable(RuntimeError):
@@ -29,9 +44,20 @@ class LatexCompileError(RuntimeError):
 
 
 def latex_engine() -> str | None:
+    """Absolute path (or bare name) of an available LaTeX engine, else None."""
     for eng in _ENGINES:
-        if shutil.which(eng):
-            return eng
+        found = shutil.which(eng)
+        if found:
+            return found
+    # Not on PATH — probe well-known TeX install directories directly.
+    search_dirs = list(_TEX_DIRS)
+    for pattern in _TEX_GLOBS:
+        search_dirs.extend(glob.glob(pattern))
+    for eng in _ENGINES:
+        for d in search_dirs:
+            cand = os.path.join(d, eng)
+            if os.path.isfile(cand) and os.access(cand, os.X_OK):
+                return cand
     return None
 
 
@@ -40,6 +66,13 @@ def compile_tex(tex: str, *, timeout: float = 60.0, passes: int = 2) -> tuple[by
     engine = latex_engine()
     if engine is None:
         raise LatexUnavailable("no LaTeX engine found")
+
+    # Ensure the engine's own directory is on PATH for any helper binaries it
+    # calls, even when the server PATH doesn't include the TeX bin dir.
+    env = dict(os.environ)
+    eng_dir = os.path.dirname(engine)
+    if eng_dir:
+        env["PATH"] = eng_dir + os.pathsep + env.get("PATH", "")
 
     with tempfile.TemporaryDirectory(prefix="report-tex-") as tmp:
         d = Path(tmp)
@@ -50,7 +83,7 @@ def compile_tex(tex: str, *, timeout: float = 60.0, passes: int = 2) -> tuple[by
                 proc = subprocess.run(
                     [engine, "-no-shell-escape", "-interaction=nonstopmode",
                      "-halt-on-error", "report.tex"],
-                    cwd=d, capture_output=True, text=True, timeout=timeout,
+                    cwd=d, capture_output=True, text=True, timeout=timeout, env=env,
                 )
             except subprocess.TimeoutExpired as e:
                 raise LatexCompileError("LaTeX compilation timed out", str(e)) from e
