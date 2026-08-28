@@ -21,14 +21,25 @@ from app.core.config import get_settings
 from app.missions.executor import TaskExecutor, chat_executor
 from app.missions.models import Task
 from app.missions.repository import MissionRepository
+from app.tools.web_search import _fetch, parse_ddg
 
 ChatFn = Callable[[list[dict]], Awaitable[str]]
+SearchFn = Callable[[str], Awaitable[list[dict]]]
+
+
+async def default_search(query: str, max_results: int = 4) -> list[dict]:
+    """Live web search via the DuckDuckGo tool; [] on any failure (never raises)."""
+    try:
+        return parse_ddg(await _fetch(query), max_results=max_results)
+    except Exception:
+        return []
 
 ROLE_PROMPTS: dict[str, str] = {
     "researcher": (
         "You are a Researcher agent. Gather the relevant facts, options, and "
-        "sources needed for the task. Be thorough and specific; return concise, "
-        "well-organized findings."
+        "sources needed for the task. When web search results are provided, ground "
+        "your findings in them and cite the exact source URLs you rely on. Never "
+        "invent URLs or statistics. Return concise, well-organized findings."
     ),
     "analyst": (
         "You are an Analyst agent. Reason carefully over the inputs, weigh the "
@@ -148,22 +159,43 @@ class MultiAgentExecutor:
         chat_fn: ChatFn | None = None,
         critic: Critic | None | object = _UNSET,
         max_replans: int = 1,
+        search_fn: SearchFn | None = None,
     ):
         self._repo = repo
         self._chat = chat_fn or llm.chat
         # _UNSET -> default critic; explicit None -> critic disabled
         self._critic = Critic(self._chat) if critic is _UNSET else critic
         self._max_replans = max_replans
+        self._search = search_fn  # None -> no live search (offline/CI default)
 
-    async def _generate(self, role: str, description: str, feedback: str = "") -> str:
+    async def _generate(
+        self, role: str, description: str, feedback: str = "", context: str = "",
+    ) -> str:
         system = ROLE_PROMPTS.get(role, ROLE_PROMPTS[DEFAULT_ROLE])
         user = description
+        if context:
+            user = (f"{description}\n\nWeb search results (ground your answer in these "
+                    f"and cite the URLs you use):\n{context}")
         if feedback:
-            user = f"{description}\n\nReviewer feedback to address:\n{feedback}"
+            user = f"{user}\n\nReviewer feedback to address:\n{feedback}"
         return (await self._chat([
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ])).strip()
+
+    async def _research(self, query: str) -> tuple[str, list[str]]:
+        """Run web search; return (context block, real source URLs). Never raises."""
+        if self._search is None:
+            return "", []
+        results = await self._search(query)
+        ctx, urls = [], []
+        for r in results:
+            url = (r.get("url") or "").strip()
+            snippet = (r.get("snippet") or r.get("title") or "").strip()
+            if url and snippet:
+                ctx.append(f"- {snippet} ({url})")
+                urls.append(url)
+        return "\n".join(ctx), urls
 
     async def _record_flag(self, mission_id: int, task_id: int, note: str) -> None:
         """Persist a critic flag onto the mission meta (best-effort, race-tolerant)."""
@@ -183,7 +215,12 @@ class MultiAgentExecutor:
         roles = (mission.meta.get("roles") if mission else None) or {}
         role = roles.get(str(task.id), DEFAULT_ROLE)
 
-        output = await self._generate(role, task.description)
+        # Researcher tasks gather real sources via web search before answering.
+        context, urls = ("", [])
+        if role == "researcher":
+            context, urls = await self._research(f"{objective} {task.description}".strip())
+
+        output = await self._generate(role, task.description, context=context)
 
         # Topic-drift guard: if the answer is off-topic vs the objective, flag it and
         # regenerate once with a corrective instruction (separate from critic replans).
@@ -191,7 +228,7 @@ class MultiAgentExecutor:
         if drift.drifted:
             await self._record_flag(task.mission_id, task.id, drift.note)
             output = await self._generate(
-                role, task.description,
+                role, task.description, context=context,
                 feedback=(f"Your previous answer drifted off-topic. It MUST directly "
                           f"address the mission objective: {objective}. {drift.note} "
                           f"Rewrite it to focus only on the objective."),
@@ -204,7 +241,15 @@ class MultiAgentExecutor:
             verdict = await self._critic.review(task.description, output, objective)
             if verdict.accepted:
                 break
-            output = await self._generate(role, task.description, feedback=verdict.feedback)
+            output = await self._generate(
+                role, task.description, context=context, feedback=verdict.feedback)
+
+        # Guarantee the real sources are present for the report's evidence ledger.
+        if urls:
+            have = {u for u in urls if u in output}
+            missing = [u for u in urls if u not in have]
+            if missing:
+                output = f"{output}\n\nSources:\n" + "\n".join(missing)
         return output
 
 
@@ -212,10 +257,15 @@ def build_executor(repo: MissionRepository, chat_fn: ChatFn | None = None) -> Ta
     """Pick the executor per config: multi-agent (role + critic) or plain chat."""
     s = get_settings()
     if s.multi_agent_enabled:
+        search_fn = None
+        if s.research_enabled:
+            async def search_fn(q: str) -> list[dict]:
+                return await default_search(q, max_results=s.research_max_results)
         return MultiAgentExecutor(
             repo,
             chat_fn=chat_fn,
             critic=Critic(chat_fn or llm.chat, threshold=s.critic_threshold),
             max_replans=s.max_replans,
+            search_fn=search_fn,
         )
     return chat_executor(chat_fn)

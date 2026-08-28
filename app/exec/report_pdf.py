@@ -273,8 +273,8 @@ def _bar_chart(c, sc) -> None:
     c.line(_L, base, _R, base, color=_RULE)
     c.y = base + 26
     c.text(_L, c.y, 8.5,
-           f"Figure 1 - Composite capability score (sum of qualitative assessments, max {maxv}).",
-           color=_MUTE)
+           f"Figure 1 - Composite analyst-derived score (sum of 0-5 assessments, max {maxv}). "
+           "Evidence-based, not market data.", color=_MUTE)
     c.y += 16
 
 
@@ -301,8 +301,8 @@ def _heatmap(c, sc) -> None:
             c.text(x + cellw / 2 - 3, c.y + 17, 9, str(s), bold=True, color=tcol)
         c.y += ch
     c.y += 4
-    c.text(_L, c.y, 8.5, "Figure 2 - Capability heatmap (qualitative assessment, 0-5).",
-           color=_MUTE)
+    c.text(_L, c.y, 8.5, "Figure 2 - Capability heatmap of analyst-derived scores "
+           "(0-5), based on this mission's evidence. Not market data.", color=_MUTE)
     c.y += 16
 
 

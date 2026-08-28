@@ -238,12 +238,13 @@ def _visual(chart_keys) -> str:
     out = [r"\section{Visual Analysis}"]
     if "chart_bar.pdf" in chart_keys:
         out.append(r"\begin{center}\includegraphics[width=0.94\linewidth]{chart_bar.pdf}"
-                   r"\end{center}\par{\footnotesize\color{mute}Figure 1 --- Capability "
-                   r"comparison (qualitative analyst assessment, 0--5).}")
+                   r"\end{center}\par{\footnotesize\color{mute}Figure 1 --- Analyst-derived "
+                   r"capability scores (0--5), based on evidence collected during this "
+                   r"mission. Not market-share or measured statistics.}")
     if "chart_radar.pdf" in chart_keys:
         out.append(r"\begin{center}\includegraphics[width=0.6\linewidth]{chart_radar.pdf}"
-                   r"\end{center}\par{\footnotesize\color{mute}Figure 2 --- Capability "
-                   r"radar (qualitative analyst assessment, 0--5).}")
+                   r"\end{center}\par{\footnotesize\color{mute}Figure 2 --- Capability radar "
+                   r"of the same analyst-derived scores (0--5). Not market data.}")
     return "\n\n".join(out)
 
 

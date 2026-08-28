@@ -64,6 +64,12 @@ class Settings(BaseSettings):
     critic_threshold: float = Field(default=0.6)
     max_replans: int = Field(default=1)
 
+    # Researcher tool-use: when on, researcher-role tasks call web_search and cite
+    # the real URLs they find, so reports carry genuine sources (not 0). Off by
+    # default so tests/CI never hit the network; enable for live/demo runs.
+    research_enabled: bool = Field(default=False)
+    research_max_results: int = Field(default=4)
+
 
 @lru_cache
 def get_settings() -> Settings:
