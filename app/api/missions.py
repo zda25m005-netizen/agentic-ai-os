@@ -17,7 +17,8 @@ from pydantic import BaseModel, Field
 
 from app.core import llm
 from app.db import session as db
-from app.exec.pdf import PdfDoc, Section, build_pdf
+from app.exec.report_builder import build_report
+from app.exec.report_pdf import render_report
 from app.missions.agents import build_executor
 from app.missions.builder import build_mission
 from app.missions.executor import TaskExecutor
@@ -144,19 +145,8 @@ async def get_mission_tasks(
 
 
 def _mission_pdf(mission: Mission, tasks: list[Task]) -> bytes:
-    """Build a report PDF from a mission's real objective, tasks, and results."""
-    usage = (mission.meta.get("usage") or {}) if mission.meta else {}
-    settled, total = progress(tasks)
-    sections = [
-        Section("Summary",
-                f"Status: {mission.status.value}\nTasks: {settled}/{total} settled\n"
-                f"Tokens: {usage.get('tokens', 0)}   Cost: ${usage.get('usd', 0):.4f}"),
-    ]
-    for t in tasks:
-        deps = ", ".join(f"#{d}" for d in t.depends_on) or "none"
-        body = (t.result or "(no result)") + f"\n\n[status: {t.status.value} · depends on: {deps}]"
-        sections.append(Section(f"Task #{t.id}: {t.description}", body))
-    return build_pdf(PdfDoc(title=f"Mission #{mission.id}: {mission.objective}", sections=sections))
+    """Build a professional analytical report PDF from the mission's real results."""
+    return render_report(build_report(mission, tasks))
 
 
 @router.get("/{mission_id}/report.pdf")
