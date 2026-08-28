@@ -93,6 +93,7 @@ _PREAMBLE = r"""\documentclass[11pt]{article}
 
 \newtcolorbox{bottomline}{colback=navy,colframe=navy,arc=2pt,left=12pt,right=12pt,top=10pt,bottom=10pt,coltext=white}
 \newtcolorbox{findingcard}{colback=cardbg,colframe=rule,boxrule=0.4pt,arc=2pt,left=11pt,right=11pt,top=9pt,bottom=9pt}
+\newtcolorbox{integritybox}{colback=white,colframe=rule,boxrule=0.6pt,arc=2pt,left=12pt,right=12pt,top=10pt,bottom=10pt}
 """
 
 
@@ -199,6 +200,10 @@ def _findings(r: Report) -> str:
                 r"{\sffamily\bfseries\color{navy}" + tex_escape(f.title) + r"}"
                 r"\hfill\confbadge{" + col + "}{" + tex_escape(f.confidence).upper() + r"}",
                 r"\par\vspace{4pt}" + _prose(f.body[:700])]
+        if f.unverified_figures:
+            card.append(r"\par\vspace{3pt}{\footnotesize\color{conflow}\sffamily "
+                        r"$\triangle$~Contains quantitative figures not backed by any "
+                        r"source (unverified).}")
         if f.source_refs:
             refs = ", ".join(f"[{n}]" for n in f.source_refs)
             card.append(r"\par\vspace{3pt}{\footnotesize\color{steel}\sffamily Traceability: cites "
@@ -224,6 +229,32 @@ def _scorecard(sc: Scorecard) -> str:
             r"\noindent\begin{tabular}{@{}" + cols + r"@{}}\toprule "
             + head + r" \\\midrule " + body + r"\bottomrule\end{tabular}"
             r"\par\vspace{3pt}{\footnotesize\color{mute}" + tex_escape(sc.methodology) + r"}")
+
+
+def _integrity(r: Report) -> str:
+    ig = r.integrity
+    if not ig:
+        return ""
+    extracted = ig.get("claims_extracted", 0)
+    unv = ig.get("unverified_figures", 0)
+    unv_cell = (r"{\color{conflow}" + str(unv) + r"}") if unv else str(unv)
+    cells = [
+        ("Sources analysed", str(ig.get("sources_analyzed", 0))),
+        ("Findings", str(extracted)),
+        ("Source-backed", f"{ig.get('claims_supported', 0)} / {extracted}"),
+        ("Unsupported", str(ig.get("unsupported", 0))),
+        ("High confidence", str(ig.get("high_confidence", 0))),
+        ("Unverified figures", unv_cell),
+    ]
+    body = ""
+    for i, (label, val) in enumerate(cells):
+        body += (r"{\sffamily\footnotesize\color{mute}" + tex_escape(label.upper())
+                 + r"}\newline{\sffamily\Large\bfseries " + val + r"}")
+        body += r" \\" + "\n" if i % 3 == 2 else " & "
+    return (r"\section{Research Integrity}\begin{integritybox}"
+            r"\begin{tabularx}{\linewidth}{XXX}" + body + r"\end{tabularx}\end{integritybox}"
+            r"\par{\footnotesize\color{mute}Metrics reflect this run's actual evidence "
+            r"ledger; no values are fabricated.}")
 
 
 def _coverage_freshness(r: Report) -> str:
@@ -303,6 +334,10 @@ def _closing(r: Report) -> str:
 
 
 def _sources(r: Report) -> str:
+    if not r.source_records and not r.sources:
+        # Compact, honest line instead of a near-empty Source Register page.
+        return (r"\section{Source Verification}"
+                r"{\color{mute}External verification unavailable for this run.}")
     out = [r"\section{Source Register}"]
     if r.source_records:
         rows = ""
@@ -346,6 +381,7 @@ def render_tex(report: Report) -> str:
         _exec_summary(report),
         _findings(report),
         _scorecard(report.scorecard) if report.scorecard else "",
+        _integrity(report),
         _coverage_freshness(report),
         _trail(report),
         _sections(report.sections),

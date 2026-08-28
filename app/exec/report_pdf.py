@@ -334,6 +334,37 @@ def _conf_badge(c: _Canvas, x: float, y_top: float, conf: str) -> None:
     c.text(x + 5, y_top, 7.5, label, bold=True, color=col)
 
 
+def _integrity(c: _Canvas, integ: dict) -> None:
+    """Honest research-integrity panel — real ledger numbers, gaps shown plainly."""
+    extracted = integ.get("claims_extracted", 0)
+    rows = [
+        ("Sources analysed", str(integ.get("sources_analyzed", 0))),
+        ("Findings", str(extracted)),
+        ("Source-backed", f"{integ.get('claims_supported', 0)} / {extracted}"),
+        ("Unsupported", str(integ.get("unsupported", 0))),
+        ("High confidence", str(integ.get("high_confidence", 0))),
+        ("Unverified figures", str(integ.get("unverified_figures", 0))),
+    ]
+    cols, rowh, pad = 3, 34, 10
+    nrows = (len(rows) + cols - 1) // cols
+    h = nrows * rowh + pad
+    cw = (_R - _L) / cols
+    c.ensure(h + 8)
+    top = c.y
+    c.rect(_L, top, _R - _L, h, stroke=_RULE, lw=0.8)
+    warn = integ.get("unverified_figures", 0) or (integ.get("sources_analyzed", 0) == 0)
+    c.rect(_L, top, 4, h, fill=(0.80, 0.55, 0.10) if warn else _NAVY)
+    for i, (label, val) in enumerate(rows):
+        cx = _L + (i % cols) * cw + 12
+        cy = top + (i // cols) * rowh + 15
+        c.text(cx, cy, 7.5, label.upper(), bold=True, color=_MUTE)
+        col = (0.75, 0.20, 0.24) if (label == "Unverified figures" and val != "0") else _INK
+        c.text(cx, cy + 14, 13, val, bold=True, color=col)
+    c.y = top + h + 6
+    c.para("Metrics reflect this run's actual evidence ledger; no values are fabricated.",
+           8.5, gap=8, color=_MUTE)
+
+
 def _bottom_line(c: _Canvas, text: str) -> None:
     """Filled navy 'BOTTOM LINE' callout — the report's headline conclusion."""
     lines = _wrap(text, 10.5, _R - _L - 24)[:4]
@@ -396,6 +427,9 @@ def _body(c: _Canvas, r: Report) -> None:
             _conf_badge(c, _R - 62, c.y, f.confidence)
             c.y += 15
             c.para(_prose(f.body), 10, gap=4)
+            if f.unverified_figures:
+                c.para("!  Contains quantitative figures not backed by any source "
+                       "(unverified).", 8.5, gap=4, color=(0.75, 0.20, 0.24))
             if f.source_refs:
                 refs = ", ".join(f"[{r}]" for r in f.source_refs)
                 c.para(f"Traceability: cites source(s) {refs}  -  see Source Register.",
@@ -411,6 +445,11 @@ def _body(c: _Canvas, r: Report) -> None:
         n += 1
         _bar_chart(c, r.scorecard)
         _heatmap(c, r.scorecard)
+
+    if r.integrity:
+        _section_title(c, n, "Research Integrity")
+        n += 1
+        _integrity(c, r.integrity)
 
     if r.coverage:
         _section_title(c, n, "Evidence Coverage")
@@ -459,9 +498,9 @@ def _body(c: _Canvas, r: Report) -> None:
             c.para("-  " + lim, 10, gap=3, color=_MUTE)
         c.y += 6
 
-    _section_title(c, n, "Source Register")
-    n += 1
     if r.source_records:
+        _section_title(c, n, "Source Register")
+        n += 1
         t = Table(
             ["#", "Source", "Type", "Cred.", "Freshness"],
             [[str(s.ref), s.url, s.stype, s.credibility, s.freshness]
@@ -471,11 +510,15 @@ def _body(c: _Canvas, r: Report) -> None:
         )
         _table(c, t)
     elif r.sources:
+        _section_title(c, n, "Source Register")
+        n += 1
         for i, s in enumerate(r.sources, 1):
             c.para(f"[{i}] {s}", 9.5, gap=2, color=_MUTE)
     else:
-        c.para("External source verification was not available for this analysis.",
-               10, color=_MUTE)
+        # No dedicated (near-empty) page — a compact, honest one-liner.
+        _section_title(c, n, "Source Verification")
+        n += 1
+        c.para("External verification unavailable for this run.", 10, color=_MUTE)
 
     if r.appendix:
         c.new_page()

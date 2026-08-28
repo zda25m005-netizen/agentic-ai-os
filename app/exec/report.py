@@ -26,6 +26,7 @@ class Finding:
     confidence: str = "Analytical"   # High | Medium | Low | Analytical
     evidence: list[str] = field(default_factory=list)
     source_refs: list[int] = field(default_factory=list)  # 1-based refs into source_records
+    unverified_figures: bool = False  # carries quantitative claims with no source backing
 
 
 @dataclass
@@ -99,4 +100,5 @@ class Report:
     sources: list[str] = field(default_factory=list)
     source_records: list[SourceRecord] = field(default_factory=list)
     freshness: dict = field(default_factory=dict)
+    integrity: dict = field(default_factory=dict)  # honest research-integrity metrics
     appendix: list[ReportSection] = field(default_factory=list)

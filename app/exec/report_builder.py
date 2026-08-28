@@ -134,7 +134,7 @@ def build_report(mission: Mission, tasks: list[Task]) -> Report:
         limitations.insert(
             0, "No external sources were captured; findings rest on model synthesis.")
 
-    return Report(
+    report = Report(
         title=_clean(objective), subtitle="Analytical Report",
         report_type=_detect_type(objective),
         meta={"mission_id": mission.id,
@@ -145,6 +145,43 @@ def build_report(mission: Mission, tasks: list[Task]) -> Report:
         sources=sources, source_records=source_records, freshness=freshness,
         appendix=appendix,
     )
+    apply_integrity(report)
+    return report
+
+
+# numbers presented as facts: percentages and currency figures
+_FIGURE = re.compile(r"\d+(?:\.\d+)?\s?%|\$\s?\d")
+_GUARDRAIL = (
+    "This run reports quantitative figures (e.g. percentages) that are not backed by "
+    "external sources; treat them as illustrative model output, not verified facts."
+)
+
+
+def apply_integrity(report: Report) -> None:
+    """Compute honest research-integrity metrics from the findings actually shown.
+
+    Flags findings that state quantitative figures without any source backing, and
+    inserts a guardrail caveat. Never fabricates: with no sources, the metrics show
+    the gap plainly rather than hiding it.
+    """
+    unverified = 0
+    for f in report.findings:
+        f.unverified_figures = (not f.source_refs) and bool(_FIGURE.search(f.body or ""))
+        unverified += 1 if f.unverified_figures else 0
+    total = len(report.findings)
+    supported = sum(1 for f in report.findings if f.source_refs)
+    report.integrity = {
+        "sources_analyzed": report.coverage.sources_analyzed if report.coverage else 0,
+        "claims_extracted": total,
+        "claims_supported": supported,
+        "unsupported": total - supported,
+        "coverage_pct": round(100 * supported / total) if total else 0,
+        "high_confidence": sum(1 for f in report.findings if f.confidence == "High"),
+        "medium_confidence": sum(1 for f in report.findings if f.confidence == "Medium"),
+        "unverified_figures": unverified,
+    }
+    if unverified and not any("not backed by external sources" in x for x in report.limitations):
+        report.limitations.insert(0, _GUARDRAIL)
 
 
 def _default_summary(objective: str, n: int) -> str:
@@ -221,4 +258,5 @@ async def build_report_llm(mission: Mission, tasks: list[Task], chat_fn: ChatFn)
             _synthesize_into(report, json.loads(m.group(0)))
     except Exception:
         pass  # keep the deterministic report
+    apply_integrity(report)  # recompute after synthesis replaces findings/limitations
     return report

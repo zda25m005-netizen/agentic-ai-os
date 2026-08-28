@@ -91,6 +91,32 @@ def test_zero_source_register_is_honest():
     assert is_valid_pdf(render_report(r))
 
 
+def test_integrity_flags_unverified_figures():
+    # confident percentages/currency with no source -> flagged + caveat + honest box
+    m = _mission("Compare A and B")
+    tasks = [_task(1, "Accuracy", "A hits 95% accuracy, B hits 92%."),
+             _task(2, "Cost", "B is cheapest at $300."),
+             _task(3, "Scale", "A scales best across corpora.")]
+    r = build_report(m, tasks)
+    assert r.findings[0].unverified_figures is True
+    assert r.findings[1].unverified_figures is True
+    assert r.findings[2].unverified_figures is False   # no figures
+    assert r.integrity["unverified_figures"] == 2
+    assert r.integrity["sources_analyzed"] == 0
+    assert r.integrity["claims_extracted"] == 3
+    assert r.integrity["unsupported"] == 3
+    assert any("not backed by external sources" in x for x in r.limitations)
+    assert is_valid_pdf(render_report(r))  # renders without a blank register page
+
+
+def test_source_backed_figures_not_flagged():
+    m = _mission("Compare A and B")
+    r = build_report(m, [_task(1, "Accuracy", "A hits 95%. https://arxiv.org/abs/1")])
+    # figure present but the finding is source-backed -> not flagged
+    assert r.findings[0].unverified_figures is False
+    assert r.integrity["unverified_figures"] == 0
+
+
 async def test_llm_synthesis_merges_snapshot_and_scorecard():
     async def fake(_messages):
         return json.dumps({
