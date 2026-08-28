@@ -446,6 +446,16 @@ def _body(c: _Canvas, r: Report) -> None:
         _bar_chart(c, r.scorecard)
         _heatmap(c, r.scorecard)
 
+    if r.critic_flags:
+        _section_title(c, n, "Quality Control (Critic)")
+        n += 1
+        for fl in r.critic_flags:
+            c.ensure(20)
+            c.text(_L, c.y + 9, 10, "●  Critic flagged topic drift",
+                   bold=True, color=(0.75, 0.20, 0.24))
+            c.y += 14
+            c.para(fl, 9.5, gap=6, color=_MUTE)
+
     if r.integrity:
         _section_title(c, n, "Research Integrity")
         n += 1

@@ -231,6 +231,16 @@ def _scorecard(sc: Scorecard) -> str:
             r"\par\vspace{3pt}{\footnotesize\color{mute}" + tex_escape(sc.methodology) + r"}")
 
 
+def _quality(r: Report) -> str:
+    if not r.critic_flags:
+        return ""
+    items = "".join(
+        r"\item {\color{conflow}\bfseries Critic flagged topic drift.}~" + tex_escape(fl)
+        for fl in r.critic_flags)
+    return (r"\section{Quality Control (Critic)}"
+            r"\begin{itemize}[leftmargin=14pt,itemsep=3pt,topsep=3pt]" + items + r"\end{itemize}")
+
+
 def _integrity(r: Report) -> str:
     ig = r.integrity
     if not ig:
@@ -381,6 +391,7 @@ def render_tex(report: Report) -> str:
         _exec_summary(report),
         _findings(report),
         _scorecard(report.scorecard) if report.scorecard else "",
+        _quality(report),
         _integrity(report),
         _coverage_freshness(report),
         _trail(report),

@@ -101,4 +101,5 @@ class Report:
     source_records: list[SourceRecord] = field(default_factory=list)
     freshness: dict = field(default_factory=dict)
     integrity: dict = field(default_factory=dict)  # honest research-integrity metrics
+    critic_flags: list[str] = field(default_factory=list)  # e.g. topic-drift events
     appendix: list[ReportSection] = field(default_factory=list)

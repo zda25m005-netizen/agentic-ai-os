@@ -143,10 +143,23 @@ def build_report(mission: Mission, tasks: list[Task]) -> Report:
         findings=findings, coverage=coverage, trail=trail, sections=sections,
         methodology=_methodology(mission, tasks, usage), limitations=limitations,
         sources=sources, source_records=source_records, freshness=freshness,
-        appendix=appendix,
+        critic_flags=_critic_flags(mission), appendix=appendix,
     )
     apply_integrity(report)
     return report
+
+
+def _critic_flags(mission: Mission) -> list[str]:
+    """Human-readable critic events (e.g. topic drift) from the mission telemetry."""
+    out: list[str] = []
+    for fl in (mission.meta.get("critic_flags") or []) if mission.meta else []:
+        if not isinstance(fl, dict):
+            continue
+        tid = fl.get("task_id", "?")
+        note = str(fl.get("note", "")).strip()
+        out.append(f"Topic drift on Task #{tid}: {note} The task was regenerated to "
+                   f"refocus on the mission objective.")
+    return out
 
 
 # numbers presented as facts: percentages and currency figures
