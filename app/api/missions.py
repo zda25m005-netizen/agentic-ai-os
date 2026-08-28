@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 from app.core import llm
 from app.db import session as db
-from app.exec.report_builder import build_report
+from app.exec.report_builder import build_report, build_report_llm
 from app.exec.report_pdf import render_report
 from app.missions.agents import build_executor
 from app.missions.builder import build_mission
@@ -144,19 +144,21 @@ async def get_mission_tasks(
     return [_task_out(t) for t in await repo.get_tasks(mission_id)]
 
 
-def _mission_pdf(mission: Mission, tasks: list[Task]) -> bytes:
-    """Build a professional analytical report PDF from the mission's real results."""
-    return render_report(build_report(mission, tasks))
-
-
 @router.get("/{mission_id}/report.pdf")
 async def mission_report_pdf(
     mission_id: int,
     repo: MissionRepository = Depends(get_mission_repo),  # noqa: B008
 ) -> Response:
-    """Generate and download a real PDF report of the mission (the pdf.create tool)."""
+    """Generate and download a professional analytical report PDF for the mission.
+
+    Uses LLM synthesis (snapshot, findings, scorecard) when configured; falls back
+    to a deterministic, source-honest report otherwise.
+    """
     mission = await _load_or_404(repo, mission_id)
-    pdf = _mission_pdf(mission, await repo.get_tasks(mission_id))
+    tasks = await repo.get_tasks(mission_id)
+    report = await build_report_llm(mission, tasks, llm.chat) if llm.is_configured() \
+        else build_report(mission, tasks)
+    pdf = render_report(report)
     return Response(
         content=pdf, media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="mission-{mission_id}.pdf"'},
