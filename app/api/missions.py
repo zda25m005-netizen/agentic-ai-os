@@ -17,8 +17,8 @@ from pydantic import BaseModel, Field
 
 from app.core import llm
 from app.db import session as db
+from app.exec.latex.pipeline import render_report_best
 from app.exec.report_builder import build_report, build_report_llm
-from app.exec.report_pdf import render_report
 from app.missions.agents import build_executor
 from app.missions.builder import build_mission
 from app.missions.executor import TaskExecutor
@@ -158,10 +158,13 @@ async def mission_report_pdf(
     tasks = await repo.get_tasks(mission_id)
     report = await build_report_llm(mission, tasks, llm.chat) if llm.is_configured() \
         else build_report(mission, tasks)
-    pdf = render_report(report)
+    pdf, engine = render_report_best(report)
     return Response(
         content=pdf, media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="mission-{mission_id}.pdf"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="mission-{mission_id}.pdf"',
+            "X-Report-Engine": engine,
+        },
     )
 
 
