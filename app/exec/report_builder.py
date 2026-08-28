@@ -94,10 +94,12 @@ def build_report(mission: Mission, tasks: list[Task]) -> Report:
         for t in done
     ] or [ReportSection("Analysis",
                         ["No task results were recorded. Re-run with an LLM configured."])]
-    sections.append(ReportSection("Report Metadata", [], table=Table(
+
+    # mission execution details belong in an appendix, not the main report
+    appendix = [ReportSection("Mission Execution Summary", [], table=Table(
         ["#", "Task", "Status"],
         [[str(t.id), _clean(t.description)[:70], t.status.value] for t in tasks],
-        "Table 1 — Analysis scope (mission task coverage).")))
+        "Table A1 — Mission task execution (provenance)."))]
 
     snapshot = [
         Metric("Report Type", _detect_type(objective).replace("_", " ").title()),
@@ -121,7 +123,7 @@ def build_report(mission: Mission, tasks: list[Task]) -> Report:
         snapshot=snapshot, executive_summary=_default_summary(objective, len(done)),
         findings=findings, coverage=coverage, trail=trail, sections=sections,
         methodology=_methodology(mission, tasks, usage), limitations=limitations,
-        sources=sources,
+        sources=sources, appendix=appendix,
     )
 
 
@@ -150,6 +152,8 @@ _SYS = (
     "scorecard (optional): an object with dimensions (list), entities (list), and "
     "scores (map from entity to a list of integers 0-5 per dimension). Scores are a "
     "qualitative analyst assessment only, never a measured statistic. "
+    "strategic_implications: a list of 2-4 strings, each a sharp 'so what' insight "
+    "(what the finding means strategically and what a competitor/investor should do). "
     "limitations: a list of strings. "
     "Base everything strictly on the provided material. NEVER invent sources, URLs, "
     "or quantitative market figures."
@@ -174,6 +178,9 @@ def _synthesize_into(report: Report, data: dict) -> None:
             report.scorecard = Scorecard(
                 dimensions=[str(d) for d in sc["dimensions"]],
                 entities=[str(e) for e in sc["entities"]], scores=scores)
+    si = data.get("strategic_implications")
+    if isinstance(si, list) and si:
+        report.strategic_implications = [str(x) for x in si][:4]
     lim = data.get("limitations")
     if isinstance(lim, list) and lim:
         report.limitations = [str(x) for x in lim][:5]

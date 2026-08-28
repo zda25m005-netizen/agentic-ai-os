@@ -82,6 +82,8 @@ class Report:
     coverage: EvidenceCoverage | None = None
     trail: ResearchTrail | None = None
     sections: list[ReportSection] = field(default_factory=list)
+    strategic_implications: list[str] = field(default_factory=list)
     methodology: str = ""
     limitations: list[str] = field(default_factory=list)
     sources: list[str] = field(default_factory=list)
+    appendix: list[ReportSection] = field(default_factory=list)
