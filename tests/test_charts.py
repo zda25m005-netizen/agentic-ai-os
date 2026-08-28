@@ -41,7 +41,8 @@ def test_no_scorecard_no_charts():
 
 def test_assets_keys_match_template():
     assets = scorecard_assets(_scorecard())
-    assert set(assets) == {"chart_bar.pdf", "chart_radar.pdf"}
+    assert set(assets) == {"chart_bar.pdf", "chart_radar.pdf", "chart_tradeoff.pdf"}
+    assert assets["chart_tradeoff.pdf"].startswith(b"%PDF-")
 
 
 def test_fallback_radar_renders_without_charts_dependency():

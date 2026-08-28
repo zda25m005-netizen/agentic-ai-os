@@ -208,6 +208,34 @@ async def test_llm_structured_report_sections():
     assert is_valid_pdf(render_report(r))
 
 
+def test_summary_grammar_no_double_verb():
+    from app.exec.report_builder import _default_summary
+    s = _default_summary("Evaluate three approaches to LLM memory", 3)
+    assert s.startswith("This report evaluates three approaches")
+    assert "analyzes evaluate" not in s
+    s2 = _default_summary("Compare NVIDIA and AMD", 2)
+    assert s2.startswith("This report compares NVIDIA and AMD")
+
+
+async def test_llm_framework_and_risk_matrix():
+    async def fake(_messages):
+        return json.dumps({
+            "evaluation_framework": [
+                {"criterion": "Accuracy", "definition": "Correctness of recall"},
+                {"criterion": "Freshness", "definition": "How current the info is"}],
+            "failure_analysis": [
+                {"failure": "Retrieval miss", "probability": "Medium", "impact": "High",
+                 "mitigation": "Hybrid retrieval"}],
+        })
+    r = await build_report_llm(_mission("Evaluate RAG vs Fine-tuning"),
+                               [_task(1, "t", "r")], fake)
+    assert len(r.evaluation_framework) == 2
+    assert r.evaluation_framework[0]["criterion"] == "Accuracy"
+    assert r.failure_analysis[0]["probability"] == "Medium"
+    tex = render_tex(r)
+    assert "Evaluation Framework" in tex and "Probability" in tex
+
+
 async def test_llm_bad_response_falls_back():
     async def bad(_messages):
         return "not json"

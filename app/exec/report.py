@@ -90,6 +90,7 @@ class Report:
     snapshot: list[Metric] = field(default_factory=list)
     executive_summary: str = ""
     problem_definition: str = ""                    # what the topic is / why it matters
+    evaluation_framework: list[dict] = field(default_factory=list)  # criterion/definition
     findings: list[Finding] = field(default_factory=list)
     approaches: list[dict] = field(default_factory=list)   # per-option deep dive
     comparative_analysis: str = ""                  # narrative across dimensions

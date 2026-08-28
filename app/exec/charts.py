@@ -82,6 +82,51 @@ def radar_chart_pdf(sc: Scorecard | None) -> bytes | None:
     return _to_pdf(plt, fig)
 
 
+def _pick_axes(dims: list[str]) -> tuple[int, int] | None:
+    """Choose two dimensions for a trade-off plot (cost-like vs quality-like)."""
+    if len(dims) < 2:
+        return None
+    low = [d.lower() for d in dims]
+
+    def find(keys):
+        for i, d in enumerate(low):
+            if any(k in d for k in keys):
+                return i
+        return None
+    x = find(("cost", "complexity", "maintain", "latency"))
+    y = find(("accuracy", "quality", "fresh", "reliab", "personal"))
+    if x is None or y is None or x == y:
+        x, y = 0, 1
+    return x, y
+
+
+def tradeoff_chart_pdf(sc: Scorecard | None) -> bytes | None:
+    """Scatter of two evaluation dimensions (e.g. cost vs accuracy), one point/entity."""
+    plt = _plt()
+    if plt is None or sc is None or not sc.entities:
+        return None
+    axes = _pick_axes(sc.dimensions)
+    if axes is None:
+        return None
+    xi, yi = axes
+    fig, ax = plt.subplots(figsize=(5.6, 4.2))
+    for j, e in enumerate(sc.entities):
+        s = _scores(sc, e)
+        col = _PALETTE[j % len(_PALETTE)]
+        ax.scatter([s[xi]], [s[yi]], s=140, color=col, zorder=3, label=e)
+        ax.annotate(e, (s[xi], s[yi]), textcoords="offset points", xytext=(8, 6),
+                    fontsize=8, color=col)
+    ax.set_xlabel(f"{sc.dimensions[xi]} (0-5)", fontsize=9)
+    ax.set_ylabel(f"{sc.dimensions[yi]} (0-5)", fontsize=9)
+    ax.set_xlim(-0.3, 5.3)
+    ax.set_ylim(-0.3, 5.3)
+    ax.set_axisbelow(True)
+    ax.grid(color="#dfe3ea", linewidth=0.7)
+    for spine in ("top", "right"):
+        ax.spines[spine].set_visible(False)
+    return _to_pdf(plt, fig)
+
+
 def _to_pdf(plt, fig) -> bytes:
     buf = io.BytesIO()
     fig.savefig(buf, format="pdf", bbox_inches="tight")
@@ -98,4 +143,7 @@ def scorecard_assets(sc: Scorecard | None) -> dict[str, bytes]:
     radar = radar_chart_pdf(sc)
     if radar:
         assets["chart_radar.pdf"] = radar
+    tradeoff = tradeoff_chart_pdf(sc)
+    if tradeoff:
+        assets["chart_tradeoff.pdf"] = tradeoff
     return assets

@@ -35,8 +35,14 @@ def _prose(text: str) -> str:
 
 
 def _ref_label(url: str) -> str:
-    """A short, human title for a reference (from the URL slug/domain)."""
+    """A short, human title for a reference (arXiv/DOI/wiki-title/domain)."""
     from urllib.parse import unquote
+    m = re.search(r"arxiv\.org/(?:abs|pdf)/([0-9]{4}\.[0-9]{4,5})", url, re.I)
+    if m:
+        return "arXiv:" + m.group(1)
+    m = re.search(r"doi\.org/(10\.[^\s?#]+)", url, re.I)
+    if m:
+        return "doi:" + m.group(1)
     path = url.split("?")[0].split("#")[0].rstrip("/")
     slug = path.rsplit("/", 1)[-1] if "/" in path.split("//")[-1] else ""
     label = unquote(slug).replace("_", " ").strip()
@@ -506,6 +512,13 @@ def _body(c: _Canvas, r: Report) -> None:
         n += 1
         _render_blocks(c, md.parse(md.strip_bare_urls(r.problem_definition)))
 
+    if r.evaluation_framework:
+        _section_title(c, n, "Evaluation Framework")
+        n += 1
+        rows = [[d.get("criterion", ""), d.get("definition", "")]
+                for d in r.evaluation_framework]
+        _table(c, Table(["Criterion", "Definition"], rows, ""))
+
     if r.findings:
         _section_title(c, n, "Key Findings")
         n += 1
@@ -552,9 +565,16 @@ def _body(c: _Canvas, r: Report) -> None:
     if r.failure_analysis:
         _section_title(c, n, "Failure Mode Analysis")
         n += 1
-        rows = [[d.get("failure", ""), d.get("impact", ""), d.get("mitigation", "")]
-                for d in r.failure_analysis]
-        _table(c, Table(["Failure", "Impact", "Mitigation"], rows, ""))
+        has_prob = any(d.get("probability") for d in r.failure_analysis)
+        if has_prob:
+            cols = ["Failure", "Probability", "Impact", "Mitigation"]
+            rows = [[d.get("failure", ""), d.get("probability", ""), d.get("impact", ""),
+                     d.get("mitigation", "")] for d in r.failure_analysis]
+        else:
+            cols = ["Failure", "Impact", "Mitigation"]
+            rows = [[d.get("failure", ""), d.get("impact", ""), d.get("mitigation", "")]
+                    for d in r.failure_analysis]
+        _table(c, Table(cols, rows, ""))
 
     if r.recommendation or r.decision_rationale:
         _section_title(c, n, "Recommendation")

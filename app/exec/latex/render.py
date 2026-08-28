@@ -223,6 +223,10 @@ def _visual(chart_keys) -> str:
         out.append(r"\begin{center}\includegraphics[width=0.6\linewidth]{chart_radar.pdf}"
                    r"\end{center}\par{\footnotesize\color{mute}Figure 2 --- Capability radar "
                    r"of the same analyst-derived scores (0--5). Not market data.}")
+    if "chart_tradeoff.pdf" in chart_keys:
+        out.append(r"\begin{center}\includegraphics[width=0.62\linewidth]{chart_tradeoff.pdf}"
+                   r"\end{center}\par{\footnotesize\color{mute}Figure 3 --- Trade-off view of "
+                   r"two evaluation criteria (analyst-derived scores, 0--5).}")
     return "\n\n".join(out)
 
 
@@ -322,6 +326,18 @@ def _problem(r: Report) -> str:
     return r"\section{Problem Definition}" + _il(r.problem_definition)
 
 
+def _framework(r: Report) -> str:
+    if not r.evaluation_framework:
+        return ""
+    rows = ""
+    for d in r.evaluation_framework:
+        rows += _il(d.get("criterion", "")) + " & " + _il(d.get("definition", "")) + r" \\" + "\n"
+    return (r"\section{Evaluation Framework}"
+            r"\small\begin{tabularx}{\linewidth}{@{}>{\RaggedRight\arraybackslash}p{40mm} L@{}}"
+            r"\toprule \sffamily\bfseries Criterion & \sffamily\bfseries Definition "
+            r"\\\midrule " + rows + r"\bottomrule\end{tabularx}\normalsize")
+
+
 def _bullets(label: str, items: list) -> str:
     if not items:
         return ""
@@ -354,15 +370,23 @@ def _comparative(r: Report) -> str:
 def _failure_analysis(r: Report) -> str:
     if not r.failure_analysis:
         return ""
+    has_prob = any(d.get("probability") for d in r.failure_analysis)
     rows = ""
     for d in r.failure_analysis:
-        rows += (_il(d.get("failure", "")) + " & " + _il(d.get("impact", "")) + " & "
+        prob = (_il(d.get("probability", "")) + " & ") if has_prob else ""
+        rows += (_il(d.get("failure", "")) + " & " + prob + _il(d.get("impact", "")) + " & "
                  + _il(d.get("mitigation", "")) + r" \\" + "\n")
+    if has_prob:
+        spec = r"L >{\RaggedRight\arraybackslash}p{22mm} >{\RaggedRight\arraybackslash}p{22mm} L"
+        head = (r"\sffamily\bfseries Failure & \sffamily\bfseries Probability & "
+                r"\sffamily\bfseries Impact & \sffamily\bfseries Mitigation")
+    else:
+        spec = r"L L L"
+        head = (r"\sffamily\bfseries Failure & \sffamily\bfseries Impact & "
+                r"\sffamily\bfseries Mitigation")
     return (r"\section{Failure Mode Analysis}"
-            r"\small\begin{tabularx}{\linewidth}{@{}L L L@{}}\toprule "
-            r"\sffamily\bfseries Failure & \sffamily\bfseries Impact & "
-            r"\sffamily\bfseries Mitigation \\\midrule " + rows
-            + r"\bottomrule\end{tabularx}\normalsize")
+            r"\small\begin{tabularx}{\linewidth}{@{}" + spec + r"@{}}\toprule "
+            + head + r" \\\midrule " + rows + r"\bottomrule\end{tabularx}\normalsize")
 
 
 def _recommendation(r: Report) -> str:
@@ -405,8 +429,14 @@ def _closing(r: Report) -> str:
 
 
 def _ref_label(url: str) -> str:
-    """A short, wrapping, human title for a reference (from the URL slug/domain)."""
+    """A short, human title for a reference (arXiv/DOI/wiki-title/domain)."""
     from urllib.parse import unquote
+    m = re.search(r"arxiv\.org/(?:abs|pdf)/([0-9]{4}\.[0-9]{4,5})", url, re.I)
+    if m:
+        return "arXiv:" + m.group(1)
+    m = re.search(r"doi\.org/(10\.[^\s?#]+)", url, re.I)
+    if m:
+        return "doi:" + m.group(1)
     path = url.split("?")[0].split("#")[0].rstrip("/")
     slug = path.rsplit("/", 1)[-1] if "/" in path.split("//")[-1] else ""
     label = unquote(slug).replace("_", " ").strip()
@@ -472,6 +502,7 @@ def render_tex(report: Report, chart_keys: set[str] | None = None) -> str:
         _cover(report),
         _exec_summary(report),
         _problem(report),
+        _framework(report),
         _findings(report),
         _approaches(report),
         _comparative(report),

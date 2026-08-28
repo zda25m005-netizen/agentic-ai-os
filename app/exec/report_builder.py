@@ -269,9 +269,22 @@ def apply_integrity(report: Report) -> None:
         report.limitations.insert(0, _GUARDRAIL)
 
 
+_VERB3 = {
+    "evaluate": "evaluates", "compare": "compares", "analyze": "analyses",
+    "analyse": "analyses", "assess": "assesses", "review": "reviews",
+    "research": "examines", "investigate": "investigates", "examine": "examines",
+    "explore": "explores", "design": "sets out a design for", "recommend": "recommends",
+    "summarize": "summarises", "summarise": "summarises",
+}
+
+
 def _default_summary(objective: str, n: int) -> str:
-    return (f"This report analyzes {objective[:1].lower() + objective[1:]}, comparing the "
-            "available options and setting out a recommended direction.")
+    words = objective.strip().split()
+    first = words[0].lower().rstrip(":") if words else ""
+    tail = "comparing the available options and setting out a recommended direction."
+    if first in _VERB3:
+        return f"This report {_VERB3[first]} {' '.join(words[1:])}, {tail}"
+    return f"This report examines {objective[:1].lower() + objective[1:]}, {tail}"
 
 
 def _methodology() -> str:
@@ -289,13 +302,21 @@ _SYS = (
     "Challenger, Biggest Risk) when relevant. "
     "findings: a list of objects with title, body, and confidence (High, Medium, or "
     "Low). "
-    "problem_definition: 1-2 sentences defining the topic and why it matters. "
+    "problem_definition: 1-2 sentences defining the topic and precisely what is being "
+    "optimised. "
+    "evaluation_framework (optional): a list of objects with criterion and definition "
+    "for the axes you judge the options on (e.g. accuracy, freshness, cost, latency, "
+    "personalization, maintainability, reliability). "
     "approaches (optional): a list of objects, one per option in the objective, each "
-    "with name, how_it_works (string), advantages (list), disadvantages (list), "
-    "failure_modes (list), mitigations (list). Use the objective's real option names. "
+    "with name, how_it_works (string, describe the architecture concretely), advantages "
+    "(list), disadvantages (list), failure_modes (list of SPECIFIC, systems-level modes "
+    "— e.g. for retrieval: retrieval miss, semantic false positive, stale embeddings, "
+    "chunk-boundary errors, context dilution; not vague terms), mitigations (list). Use "
+    "the objective's real option names. "
     "comparative_analysis (optional): a short paragraph comparing the options across "
-    "the relevant dimensions (accuracy, freshness, cost, scalability, reliability). "
-    "failure_analysis (optional): a list of objects with failure, impact, mitigation. "
+    "the evaluation criteria. "
+    "failure_analysis (optional): a risk register — a list of objects with failure, "
+    "probability (Low/Medium/High), impact (Low/Medium/High/Critical), and mitigation. "
     "scorecard (optional): an object with dimensions (list), entities (list), and "
     "scores (map from entity to a list of integers 0-5 per dimension). Scores are a "
     "qualitative analyst assessment only, never a measured statistic. "
@@ -349,6 +370,11 @@ def _synthesize_into(report: Report, data: dict) -> None:
     pd = data.get("problem_definition")
     if isinstance(pd, str) and pd.strip():
         report.problem_definition = pd.strip()
+    ef = data.get("evaluation_framework")
+    if isinstance(ef, list) and ef:
+        report.evaluation_framework = [
+            {"criterion": str(d.get("criterion", "")), "definition": str(d.get("definition", ""))}
+            for d in ef if isinstance(d, dict) and d.get("criterion")][:8]
     ap = data.get("approaches")
     if isinstance(ap, list) and ap:
         report.approaches = [
@@ -359,9 +385,9 @@ def _synthesize_into(report: Report, data: dict) -> None:
     fa = data.get("failure_analysis")
     if isinstance(fa, list) and fa:
         report.failure_analysis = [
-            {"failure": str(d.get("failure", "")), "impact": str(d.get("impact", "")),
-             "mitigation": str(d.get("mitigation", ""))}
-            for d in fa if isinstance(d, dict) and d.get("failure")][:8]
+            {"failure": str(d.get("failure", "")), "probability": str(d.get("probability", "")),
+             "impact": str(d.get("impact", "")), "mitigation": str(d.get("mitigation", ""))}
+            for d in fa if isinstance(d, dict) and d.get("failure")][:10]
     rec = data.get("recommendation")
     if isinstance(rec, str) and rec.strip():
         report.recommendation = rec.strip()
