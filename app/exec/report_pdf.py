@@ -8,6 +8,8 @@ Helvetica-Bold only. Everything is measured so nothing overflows or clips.
 """
 from __future__ import annotations
 
+import re
+
 from app.exec.report import Report, Table
 
 _PW, _PH = 595, 842          # A4 points
@@ -16,7 +18,25 @@ _TOP, _BOT = 72, 72          # top / bottom margins (y from top)
 _INK = (0.11, 0.12, 0.15)
 _MUTE = (0.42, 0.46, 0.52)
 _ACCENT = (0.15, 0.42, 0.75)
+_NAVY = (0.09, 0.14, 0.28)
 _RULE = (0.80, 0.83, 0.87)
+
+_URL_RE = re.compile(r"https?://\S+")
+
+
+def _prose(text: str) -> str:
+    """Body text with bare URLs removed (they live in the Source Register)."""
+    s = _URL_RE.sub("", text or "")
+    s = re.sub(r"\s+([.,;:])", r"\1", s)
+    return re.sub(r"\s{2,}", " ", s).strip()
+
+
+def _overall_conf(r: Report) -> str:
+    confs = {f.confidence for f in r.findings}
+    for level in ("High", "Medium", "Low"):
+        if level in confs:
+            return level
+    return "Analytical"
 
 
 def _esc(s: str) -> str:
@@ -314,6 +334,39 @@ def _conf_badge(c: _Canvas, x: float, y_top: float, conf: str) -> None:
     c.text(x + 5, y_top, 7.5, label, bold=True, color=col)
 
 
+def _bottom_line(c: _Canvas, text: str) -> None:
+    """Filled navy 'BOTTOM LINE' callout — the report's headline conclusion."""
+    lines = _wrap(text, 10.5, _R - _L - 24)[:4]
+    h = 22 + len(lines) * 14 + 10
+    c.ensure(h + 8)
+    top = c.y
+    c.rect(_L, top, _R - _L, h, fill=_NAVY)
+    c.text(_L + 12, top + 16, 8, "BOTTOM LINE", bold=True, color=(1, 1, 1))
+    yy = top + 34
+    for ln in lines:
+        c.text(_L + 12, yy, 10.5, ln, color=(0.90, 0.93, 0.97))
+        yy += 14
+    c.y = top + h + 10
+
+
+def _exec_confidence(c: _Canvas, r: Report) -> None:
+    """Evidence-coverage bar + overall qualitative confidence badge."""
+    if not r.coverage:
+        return
+    pct = r.coverage.coverage_pct
+    c.text(_L, c.y, 8, "EVIDENCE COVERAGE", bold=True, color=_MUTE)
+    c.y += 10
+    c.rect(_L, c.y, _R - _L, 9, fill=(0.91, 0.93, 0.96))
+    c.rect(_L, c.y, (_R - _L) * pct / 100, 9, fill=_NAVY)
+    c.y += 17
+    conf = _overall_conf(r)
+    c.text(_L, c.y, 9, f"{pct}% of major claims source-backed  -  "
+           f"{r.coverage.sources_analyzed} source(s) analysed  -  overall confidence",
+           color=_MUTE)
+    _conf_badge(c, _L + 340, c.y, conf)
+    c.y += 16
+
+
 def _body(c: _Canvas, r: Report) -> None:
     n = 1
     if r.snapshot:
@@ -325,8 +378,13 @@ def _body(c: _Canvas, r: Report) -> None:
         _section_title(c, n, "Executive Summary")
         n += 1
         top = c.y
-        c.para(r.executive_summary, 10.5)
+        c.para(_prose(r.executive_summary), 10.5)
         c.rect(_L - 12, top - 6, 3, (c.y - top), fill=_ACCENT)  # accent bar
+        bl = _prose(r.findings[0].body) if r.findings else _prose(r.executive_summary)
+        bl = (bl.split(". ")[0].rstrip(".") + ".") if bl else ""
+        if bl:
+            _bottom_line(c, bl[:360])
+        _exec_confidence(c, r)
 
     if r.findings:
         _section_title(c, n, "Key Findings")
@@ -337,7 +395,7 @@ def _body(c: _Canvas, r: Report) -> None:
             c.text(_L + 28, c.y, 11, f.title[:58], bold=True)
             _conf_badge(c, _R - 62, c.y, f.confidence)
             c.y += 15
-            c.para(f.body, 10, gap=4)
+            c.para(_prose(f.body), 10, gap=4)
             if f.source_refs:
                 refs = ", ".join(f"[{r}]" for r in f.source_refs)
                 c.para(f"Traceability: cites source(s) {refs}  -  see Source Register.",
@@ -376,7 +434,7 @@ def _body(c: _Canvas, r: Report) -> None:
         _section_title(c, n, sec.heading)
         n += 1
         for p in sec.paragraphs:
-            c.para(p, 10.5)
+            c.para(_prose(p), 10.5)
         if sec.table:
             _table(c, sec.table)
 

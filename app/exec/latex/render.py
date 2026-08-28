@@ -162,8 +162,7 @@ def _exec_summary(r: Report) -> str:
     bl = bl or r.executive_summary
     bl = _URL_RE.sub("", bl).strip()
     if bl:
-        first = bl.split(". ")
-        bl = (first[0] + ".") if first else bl
+        bl = bl.split(". ")[0].rstrip(".") + "."
         out.append(r"\vspace{4pt}\begin{bottomline}"
                    r"{\sffamily\bfseries\footnotesize BOTTOM LINE}\par\vspace{3pt}"
                    + tex_escape(bl[:400]) + r"\end{bottomline}")
