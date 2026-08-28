@@ -11,12 +11,13 @@ import asyncio
 import json
 from collections.abc import Awaitable, Callable
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.core import llm
 from app.db import session as db
+from app.exec.pdf import PdfDoc, Section, build_pdf
 from app.missions.agents import build_executor
 from app.missions.builder import build_mission
 from app.missions.executor import TaskExecutor
@@ -140,6 +141,36 @@ async def get_mission_tasks(
     """Fetch just the tasks of a mission."""
     await _load_or_404(repo, mission_id)
     return [_task_out(t) for t in await repo.get_tasks(mission_id)]
+
+
+def _mission_pdf(mission: Mission, tasks: list[Task]) -> bytes:
+    """Build a report PDF from a mission's real objective, tasks, and results."""
+    usage = (mission.meta.get("usage") or {}) if mission.meta else {}
+    settled, total = progress(tasks)
+    sections = [
+        Section("Summary",
+                f"Status: {mission.status.value}\nTasks: {settled}/{total} settled\n"
+                f"Tokens: {usage.get('tokens', 0)}   Cost: ${usage.get('usd', 0):.4f}"),
+    ]
+    for t in tasks:
+        deps = ", ".join(f"#{d}" for d in t.depends_on) or "none"
+        body = (t.result or "(no result)") + f"\n\n[status: {t.status.value} · depends on: {deps}]"
+        sections.append(Section(f"Task #{t.id}: {t.description}", body))
+    return build_pdf(PdfDoc(title=f"Mission #{mission.id}: {mission.objective}", sections=sections))
+
+
+@router.get("/{mission_id}/report.pdf")
+async def mission_report_pdf(
+    mission_id: int,
+    repo: MissionRepository = Depends(get_mission_repo),  # noqa: B008
+) -> Response:
+    """Generate and download a real PDF report of the mission (the pdf.create tool)."""
+    mission = await _load_or_404(repo, mission_id)
+    pdf = _mission_pdf(mission, await repo.get_tasks(mission_id))
+    return Response(
+        content=pdf, media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="mission-{mission_id}.pdf"'},
+    )
 
 
 @router.get("/{mission_id}/stream")
