@@ -2,7 +2,7 @@
 
 `build_report` is deterministic (works with no LLM): it extracts sources from the
 actual results, tags each finding's confidence from whether it is source-backed,
-and computes real evidence-coverage + research-trail stats. `build_report_llm`
+and computes real evidence-coverage stats. `build_report_llm`
 adds LLM *synthesis* — an executive snapshot, sharper findings, an optional
 qualitative scorecard (explicitly labeled an analyst assessment), and limitations
 — strictly from the gathered material. No fabricated numbers or sources; a bad
@@ -22,10 +22,8 @@ from app.exec.report import (
     Metric,
     Report,
     ReportSection,
-    ResearchTrail,
     Scorecard,
     SourceRecord,
-    Table,
 )
 from app.missions.models import Mission, Task
 
@@ -56,6 +54,15 @@ def _urls(text: str) -> list[str]:
     return _URL.findall(text or "")
 
 
+# the researcher appends a trailing "Sources:\n<url>..." block; URLs go to the
+# register, so strip the leftover label/block from displayed prose.
+_SOURCES_BLOCK = re.compile(r"\n+\s*sources?\s*:\s*(?:\n.*)?$", re.IGNORECASE | re.DOTALL)
+
+
+def _strip_sources_block(text: str) -> str:
+    return _SOURCES_BLOCK.sub("", text or "").strip()
+
+
 def _extract_sources(tasks: list[Task]) -> list[str]:
     seen: list[str] = []
     for t in tasks:
@@ -69,7 +76,6 @@ def build_report(mission: Mission, tasks: list[Task]) -> Report:
     """Deterministic, source-honest report (no LLM)."""
     objective = mission.objective
     done = [t for t in tasks if t.status.value == "done" and (t.result or "").strip()]
-    usage = (mission.meta.get("usage") or {}) if mission.meta else {}
 
     # Evidence ledger: register each finding's URLs as sources, tag each finding as a
     # claim, and let confidence be *earned* from source count + quality (not guessed).
@@ -82,7 +88,8 @@ def build_report(mission: Mission, tasks: list[Task]) -> Report:
         ledger.claims.append(claim)
         conf = claim.confidence(ledger.sources).value if idxs else "Analytical"
         findings.append(Finding(
-            title=_clean(t.description)[:80], body=(t.result or "").strip()[:600],
+            title=_clean(t.description)[:80],
+            body=_strip_sources_block(t.result or "")[:600],
             confidence=conf, evidence=[ledger.sources[i].url for i in idxs][:3],
             source_refs=[i + 1 for i in idxs],  # 1-based, for claim traceability
         ))
@@ -102,23 +109,13 @@ def build_report(mission: Mission, tasks: list[Task]) -> Report:
         sources_analyzed=cov["sources_analyzed"], claims_supported=cov["claims_supported"],
         assessments=cov["unsupported"],
     )
-    trail = ResearchTrail(
-        sources_used=len(sources), sources_excluded=0,
-        areas=[_clean(t.description)[:46] for t in done][:6],
-        last_verified=datetime.now(UTC).strftime("%d %b %Y"),
-    )
 
     sections = [
-        ReportSection(_clean(t.description), [(t.result or "(no result)").strip()])
+        ReportSection(_clean(t.description),
+                      [_strip_sources_block(t.result or "") or "(no result)"])
         for t in done
     ] or [ReportSection("Analysis",
-                        ["No task results were recorded. Re-run with an LLM configured."])]
-
-    # mission execution details belong in an appendix, not the main report
-    appendix = [ReportSection("Mission Execution Summary", [], table=Table(
-        ["#", "Task", "Status"],
-        [[str(t.id), _clean(t.description)[:70], t.status.value] for t in tasks],
-        "Table A1 — Mission task execution (provenance)."))]
+                        ["No analysis content was available for this report."])]
 
     snapshot = [
         Metric("Report Type", _detect_type(objective).replace("_", " ").title()),
@@ -127,23 +124,23 @@ def build_report(mission: Mission, tasks: list[Task]) -> Report:
     ]
 
     limitations = [
-        "External source verification was limited to links captured during the mission.",
+        "External source verification was limited to the sources gathered for this report.",
         "Interpretive statements are analytical assessments, not measured facts.",
     ]
     if not sources:
         limitations.insert(
-            0, "No external sources were captured; findings rest on model synthesis.")
+            0, "No external sources were available; findings rest on analytical synthesis.")
 
     report = Report(
         title=_clean(objective), subtitle="Analytical Report",
         report_type=_detect_type(objective),
-        meta={"mission_id": mission.id,
-              "date": datetime.now(UTC).strftime("%d %B %Y"), "sources": len(sources)},
+        meta={"date": datetime.now(UTC).strftime("%d %B %Y"), "sources": len(sources),
+              "status": (mission.meta or {}).get("status", "Completed")},
         snapshot=snapshot, executive_summary=_default_summary(objective, len(done)),
-        findings=findings, coverage=coverage, trail=trail, sections=sections,
-        methodology=_methodology(mission, tasks, usage), limitations=limitations,
+        findings=findings, coverage=coverage, sections=sections,
+        methodology=_methodology(), limitations=limitations,
         sources=sources, source_records=source_records, freshness=freshness,
-        critic_flags=_critic_flags(mission), appendix=appendix,
+        critic_flags=_critic_flags(mission),
     )
     apply_integrity(report)
     return report
@@ -164,52 +161,101 @@ def _critic_flags(mission: Mission) -> list[str]:
 
 # numbers presented as facts: percentages and currency figures
 _FIGURE = re.compile(r"\d+(?:\.\d+)?\s?%|\$\s?\d")
+_WORD4 = re.compile(r"[A-Za-z]{4,}")
 _GUARDRAIL = (
     "This run reports quantitative figures (e.g. percentages) that are not backed by "
     "external sources; treat them as illustrative model output, not verified facts."
 )
 
 
-def apply_integrity(report: Report) -> None:
-    """Compute honest research-integrity metrics from the findings actually shown.
+def _source_terms(sr) -> set[str]:
+    """Significant terms describing a source (from its URL slug + publisher)."""
+    slug = sr.url.rstrip("/").rsplit("/", 1)[-1].replace("_", " ").replace("-", " ")
+    return {w.lower() for w in _WORD4.findall(f"{slug} {sr.publisher or ''}")}
 
-    Flags findings that state quantitative figures without any source backing, and
-    inserts a guardrail caveat. Never fabricates: with no sources, the metrics show
-    the gap plainly rather than hiding it.
+
+def _conf_from_refs(refs: list[int], by_ref: dict) -> str:
+    """Earned confidence from source count + credibility (mirrors Claim.confidence)."""
+    creds = [by_ref[r].credibility for r in refs if r in by_ref]
+    if not creds:
+        return "Analytical"
+    highs = sum(1 for c in creds if c == "High")
+    if len(creds) >= 2 and highs >= 1:
+        return "High"
+    if highs >= 1 or len(creds) >= 2:
+        return "Medium"
+    return "Low"
+
+
+def apply_integrity(report: Report) -> None:
+    """Single source of truth: derive EVERY evidence metric from one graph.
+
+    Links each finding to the sources on its topic, recomputes per-finding
+    confidence purely from that backing (overriding any LLM-asserted label so
+    confidence is earned, not claimed), then rebuilds coverage, the integrity
+    block, and the overall confidence from the same numbers — so they can never
+    contradict each other. Never fabricates: with no sources, gaps show plainly.
     """
-    unverified = 0
+    srs = report.source_records
+    by_ref = {sr.ref: sr for sr in srs}
+
+    # 1) Attach source refs to findings that lack them, by topical overlap.
     for f in report.findings:
+        if not f.source_refs and srs:
+            fterms = {w.lower() for w in _WORD4.findall(f"{f.title} {f.body}")}
+            f.source_refs = [sr.ref for sr in srs if _source_terms(sr) & fterms][:3]
+
+    # 2) Confidence comes ONLY from the evidence graph, not the LLM's label.
+    for f in report.findings:
+        f.confidence = _conf_from_refs(f.source_refs, by_ref)
         f.unverified_figures = (not f.source_refs) and bool(_FIGURE.search(f.body or ""))
-        unverified += 1 if f.unverified_figures else 0
+
     total = len(report.findings)
     supported = sum(1 for f in report.findings if f.source_refs)
+    unverified = sum(1 for f in report.findings if f.unverified_figures)
+    highs = sum(1 for f in report.findings if f.confidence == "High")
+    mediums = sum(1 for f in report.findings if f.confidence == "Medium")
+
+    # 3) Coverage is rebuilt from the same findings so it matches the integrity box.
+    report.coverage = EvidenceCoverage(
+        sources_analyzed=len(srs), claims_supported=supported, assessments=total - supported)
+    pct = report.coverage.coverage_pct
+
+    # 4) Overall confidence is a function of the graph, not an LLM assertion.
+    if supported and pct >= 60 and highs >= 1:
+        overall = "High"
+    elif supported:
+        overall = "Medium"
+    else:
+        overall = "Analytical"
+
     report.integrity = {
-        "sources_analyzed": report.coverage.sources_analyzed if report.coverage else 0,
+        "sources_analyzed": len(srs),
         "claims_extracted": total,
         "claims_supported": supported,
         "unsupported": total - supported,
-        "coverage_pct": round(100 * supported / total) if total else 0,
-        "high_confidence": sum(1 for f in report.findings if f.confidence == "High"),
-        "medium_confidence": sum(1 for f in report.findings if f.confidence == "Medium"),
+        "coverage_pct": pct,
+        "high_confidence": highs,
+        "medium_confidence": mediums,
         "unverified_figures": unverified,
+        "overall_confidence": overall,
     }
     if unverified and not any("not backed by external sources" in x for x in report.limitations):
         report.limitations.insert(0, _GUARDRAIL)
 
 
 def _default_summary(objective: str, n: int) -> str:
-    return (f"This report presents an analysis of: {objective}. It is synthesized from "
-            f"{n} completed research and analysis task(s) executed by the Agentic AI OS "
-            f"mission runtime. Findings are tagged by confidence; interpretive statements "
-            f"are analytical assessments rather than measured facts.")
+    return (f"This report analyzes {objective[:1].lower() + objective[1:]}. Findings are "
+            "tagged by the strength of their supporting evidence; interpretive statements "
+            "are analytical assessments rather than measured facts.")
 
 
-def _methodology(mission: Mission, tasks: list[Task], usage: dict) -> str:
-    return ("The objective was decomposed into a task graph and executed by "
-            "role-specialized agents (researcher / analyst / executor) under a critic, then "
-            f"synthesized into this structured report. Mission #{mission.id} · {len(tasks)} "
-            f"tasks · {usage.get('tokens', 0)} tokens · ${usage.get('usd', 0):.4f}. Sources "
-            "were extracted from gathered results; unverifiable items are stated as such.")
+def _methodology() -> str:
+    return ("The analysis draws on sources gathered through targeted research on the "
+            "objective. Each source was classified by type and credibility, and every "
+            "finding is tagged by the strength of its supporting evidence. Quantitative "
+            "claims without a supporting source are marked as unverified; interpretive "
+            "statements are analytical assessments rather than measured facts.")
 
 
 _SYS = (

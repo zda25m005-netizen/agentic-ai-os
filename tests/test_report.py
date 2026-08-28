@@ -59,7 +59,6 @@ def test_findings_confidence_and_coverage():
     assert r.coverage.sources_analyzed == 2
     assert r.coverage.claims_supported == 1 and r.coverage.assessments == 1
     assert 0 <= r.coverage.coverage_pct <= 100
-    assert r.trail.sources_used == 2 and r.trail.areas
     assert r.limitations  # always honest limitations
 
 
@@ -117,6 +116,26 @@ def test_source_backed_figures_not_flagged():
     assert r.integrity["unverified_figures"] == 0
 
 
+def test_all_evidence_metrics_are_consistent():
+    # coverage, integrity, and overall confidence must agree (no contradictions)
+    m = _mission("Compare RAG and Fine-tuning for LLM memory")
+    tasks = [_task(1, "RAG", "RAG retrieval is fresh. https://en.wikipedia.org/wiki/RAG"),
+             _task(2, "Fine-tuning", "Fine-tuning bakes knowledge into weights.")]
+    r = build_report(m, tasks)
+    ig, cov = r.integrity, r.coverage
+    assert ig["sources_analyzed"] == cov.sources_analyzed
+    assert ig["claims_supported"] == cov.claims_supported
+    assert ig["coverage_pct"] == cov.coverage_pct
+    assert ig["claims_supported"] + ig["unsupported"] == ig["claims_extracted"]
+    # overall confidence can't be High unless something is actually source-backed
+    if ig["claims_supported"] == 0:
+        assert ig["overall_confidence"] == "Analytical"
+    # per-finding confidence is never High without source refs
+    for f in r.findings:
+        if not f.source_refs:
+            assert f.confidence == "Analytical"
+
+
 async def test_llm_synthesis_merges_snapshot_and_scorecard():
     async def fake(_messages):
         return json.dumps({
@@ -132,7 +151,13 @@ async def test_llm_synthesis_merges_snapshot_and_scorecard():
     r = await build_report_llm(m, [_task(1, "Research", "stuff https://x.com")], fake)
     assert r.snapshot[0].value == "NVIDIA"
     assert r.scorecard and r.scorecard.scores["NVIDIA"] == [5, 5]
-    assert r.findings[0].confidence == "High"
+    # The LLM asserted "High", but confidence is now EARNED from the evidence graph:
+    # this finding isn't linked to a source, so it is downgraded to Analytical and
+    # every metric stays consistent (no "confident but unsupported" contradiction).
+    assert r.findings[0].confidence == "Analytical"
+    assert r.integrity["claims_supported"] == 0
+    assert r.integrity["overall_confidence"] == "Analytical"
+    assert r.coverage.claims_supported == r.integrity["claims_supported"]
 
 
 async def test_llm_bad_response_falls_back():
