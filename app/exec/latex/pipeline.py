@@ -20,8 +20,10 @@ log = logging.getLogger(__name__)
 def render_report_latex(report: Report) -> bytes | None:
     """Render via LaTeX; return None if unavailable, failed, or invalid."""
     try:
-        tex = render_tex(report)
-        pdf, compile_log = compile_tex(tex)
+        from app.exec.charts import scorecard_assets  # lazy: matplotlib optional
+        assets = scorecard_assets(report.scorecard)
+        tex = render_tex(report, chart_keys=set(assets))
+        pdf, compile_log = compile_tex(tex, assets)
     except LatexUnavailable:
         return None
     except LatexCompileError as e:

@@ -61,8 +61,15 @@ def latex_engine() -> str | None:
     return None
 
 
-def compile_tex(tex: str, *, timeout: float = 60.0, passes: int = 2) -> tuple[bytes, str]:
-    """Compile `tex` to PDF; return (pdf_bytes, combined_log)."""
+def compile_tex(
+    tex: str, assets: dict[str, bytes] | None = None, *,
+    timeout: float = 60.0, passes: int = 2,
+) -> tuple[bytes, str]:
+    """Compile `tex` to PDF; return (pdf_bytes, combined_log).
+
+    `assets` maps a filename (e.g. "chart_bar.pdf") to bytes written alongside
+    report.tex so the document can \\includegraphics them.
+    """
     engine = latex_engine()
     if engine is None:
         raise LatexUnavailable("no LaTeX engine found")
@@ -77,6 +84,8 @@ def compile_tex(tex: str, *, timeout: float = 60.0, passes: int = 2) -> tuple[by
     with tempfile.TemporaryDirectory(prefix="report-tex-") as tmp:
         d = Path(tmp)
         (d / "report.tex").write_text(tex, encoding="utf-8")
+        for name, data in (assets or {}).items():
+            (d / name).write_bytes(data)
         log = ""
         for _ in range(max(1, passes)):
             try:

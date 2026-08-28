@@ -8,6 +8,7 @@ Helvetica-Bold only. Everything is measured so nothing overflows or clips.
 """
 from __future__ import annotations
 
+import math
 import re
 
 from app.exec.report import Report, Table
@@ -305,6 +306,57 @@ def _heatmap(c, sc) -> None:
     c.y += 16
 
 
+def _radar(c, sc) -> None:
+    """Outline radar/spider chart (>=3 dimensions), one polygon per entity."""
+    dims, ents = sc.dimensions, sc.entities
+    n = len(dims)
+    if n < 3:
+        return
+    size = 210
+    c.ensure(size + 40)
+    cx = (_L + _R) / 2
+    cy = c.y + size / 2
+    rad = size / 2 - 14
+
+    def pt(i: int, frac: float) -> tuple[float, float]:
+        a = -math.pi / 2 + i * 2 * math.pi / n
+        return cx + rad * frac * math.cos(a), cy + rad * frac * math.sin(a)
+
+    # grid rings + spokes
+    for ring in (0.25, 0.5, 0.75, 1.0):
+        pts = [pt(i, ring) for i in range(n)]
+        for i in range(n):
+            x1, y1 = pts[i]
+            x2, y2 = pts[(i + 1) % n]
+            c.line(x1, y1, x2, y2, color=(0.86, 0.88, 0.91), lw=0.5)
+    for i in range(n):
+        x2, y2 = pt(i, 1.0)
+        c.line(cx, cy, x2, y2, color=(0.86, 0.88, 0.91), lw=0.5)
+        lx, ly = pt(i, 1.12)
+        c.text(lx - 14, ly, 7.5, str(dims[i])[:12], color=_MUTE)
+    # entity polygons
+    for k, e in enumerate(ents):
+        row = sc.scores.get(e, [])
+        col = _PALETTE[k % len(_PALETTE)]
+        pts = [pt(i, (row[i] if i < len(row) else 0) / 5.0) for i in range(n)]
+        for i in range(n):
+            x1, y1 = pts[i]
+            x2, y2 = pts[(i + 1) % n]
+            c.line(x1, y1, x2, y2, color=col, lw=1.5)
+    # legend
+    ly = cy + rad + 22
+    lx = _L
+    for k, e in enumerate(ents):
+        col = _PALETTE[k % len(_PALETTE)]
+        c.rect(lx, ly, 8, 8, fill=col)
+        c.text(lx + 12, ly + 7, 8.5, str(e)[:22], color=_INK)
+        lx += 150
+    c.y = ly + 22
+    c.text(_L, c.y, 8.5, "Figure 3 - Capability radar (qualitative assessment, 0-5).",
+           color=_MUTE)
+    c.y += 16
+
+
 def _coverage(c, cov) -> None:
     c.ensure(40)
     pct = cov.coverage_pct
@@ -445,6 +497,7 @@ def _body(c: _Canvas, r: Report) -> None:
         n += 1
         _bar_chart(c, r.scorecard)
         _heatmap(c, r.scorecard)
+        _radar(c, r.scorecard)
 
     if r.critic_flags:
         _section_title(c, n, "Quality Control (Critic)")

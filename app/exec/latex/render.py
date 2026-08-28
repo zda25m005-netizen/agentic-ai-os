@@ -225,10 +225,26 @@ def _scorecard(sc: Scorecard) -> str:
             cells.append(tex_escape(str(vals[j])) if j < len(vals) else "-")
         rows.append(" & ".join(cells) + r" \\")
     body = "\n".join(rows)
-    return (r"\section{Competitive Scorecard}"
+    return (r"\section{Decision Matrix}"
             r"\noindent\begin{tabular}{@{}" + cols + r"@{}}\toprule "
             + head + r" \\\midrule " + body + r"\bottomrule\end{tabular}"
             r"\par\vspace{3pt}{\footnotesize\color{mute}" + tex_escape(sc.methodology) + r"}")
+
+
+def _visual(chart_keys) -> str:
+    """Include chart figures (written into the compile dir as assets)."""
+    if not chart_keys:
+        return ""
+    out = [r"\section{Visual Analysis}"]
+    if "chart_bar.pdf" in chart_keys:
+        out.append(r"\begin{center}\includegraphics[width=0.94\linewidth]{chart_bar.pdf}"
+                   r"\end{center}\par{\footnotesize\color{mute}Figure 1 --- Capability "
+                   r"comparison (qualitative analyst assessment, 0--5).}")
+    if "chart_radar.pdf" in chart_keys:
+        out.append(r"\begin{center}\includegraphics[width=0.6\linewidth]{chart_radar.pdf}"
+                   r"\end{center}\par{\footnotesize\color{mute}Figure 2 --- Capability "
+                   r"radar (qualitative analyst assessment, 0--5).}")
+    return "\n\n".join(out)
 
 
 def _quality(r: Report) -> str:
@@ -381,8 +397,13 @@ def _appendix(secs: list[ReportSection]) -> str:
     return "\n".join(out)
 
 
-def render_tex(report: Report) -> str:
-    """Compose the full LaTeX source for a report."""
+def render_tex(report: Report, chart_keys: set[str] | None = None) -> str:
+    """Compose the full LaTeX source for a report.
+
+    `chart_keys` names chart asset files (e.g. "chart_bar.pdf") that the caller
+    will write into the compile directory; only those are \\includegraphics'd.
+    """
+    chart_keys = chart_keys or set()
     parts = [
         _PREAMBLE,
         _defs(report),
@@ -391,6 +412,7 @@ def render_tex(report: Report) -> str:
         _exec_summary(report),
         _findings(report),
         _scorecard(report.scorecard) if report.scorecard else "",
+        _visual(chart_keys),
         _quality(report),
         _integrity(report),
         _coverage_freshness(report),
