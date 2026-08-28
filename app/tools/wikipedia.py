@@ -6,11 +6,19 @@ for offline testing.
 """
 from __future__ import annotations
 
+import asyncio
+import re
+
 import httpx
 
 from app.tools.registry import tool
 
 WIKI_SUMMARY_URL = "https://en.wikipedia.org/api/rest_v1/page/summary/"
+WIKI_API_URL = "https://en.wikipedia.org/w/api.php"
+# Wikimedia's User-Agent policy requires a descriptive UA that identifies the
+# client and a way to contact the operator; a generic UA gets 429-throttled.
+_UA = ("agentic-ai-os/1.0 "
+       "(https://github.com/zda25m005-netizen/agentic-ai-os; jhag8094@gmail.com)")
 
 
 def parse_summary(data: dict) -> str:
@@ -20,6 +28,48 @@ def parse_summary(data: dict) -> str:
     if not extract:
         return "No summary found."
     return f"{title}: {extract}" if title else extract
+
+
+def _title_url(title: str) -> str:
+    return "https://en.wikipedia.org/wiki/" + title.strip().replace(" ", "_")
+
+
+def parse_search(data: dict, max_results: int = 4) -> list[dict]:
+    """Turn a MediaWiki search response into [{title, snippet, url}] with real URLs."""
+    out: list[dict] = []
+    for item in (data.get("query", {}).get("search", []) or [])[:max_results]:
+        title = (item.get("title") or "").strip()
+        if not title:
+            continue
+        snippet = re.sub(r"<[^>]+>", "", item.get("snippet") or "").strip()
+        out.append({"title": title, "snippet": snippet or title, "url": _title_url(title)})
+    return out
+
+
+async def _search_fetch(query: str, max_results: int, retries: int = 2) -> dict:
+    params = {
+        "action": "query", "list": "search", "srsearch": query,
+        "format": "json", "srlimit": max_results,
+    }
+    async with httpx.AsyncClient(timeout=15, headers={"user-agent": _UA}) as client:
+        for attempt in range(retries + 1):
+            resp = await client.get(WIKI_API_URL, params=params)
+            if resp.status_code == 429 and attempt < retries:
+                wait = float(resp.headers.get("retry-after", 1.0) or 1.0)
+                await asyncio.sleep(min(wait, 3.0))
+                continue
+            resp.raise_for_status()
+            return resp.json()
+    resp.raise_for_status()  # exhausted retries
+    return resp.json()
+
+
+async def search(query: str, max_results: int = 4) -> list[dict]:
+    """Keyless web search over Wikipedia; returns real sources ([] on failure)."""
+    try:
+        return parse_search(await _search_fetch(query, max_results), max_results)
+    except Exception:
+        return []
 
 
 async def _fetch(title: str) -> dict:
