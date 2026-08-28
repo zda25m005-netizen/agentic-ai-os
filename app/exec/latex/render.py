@@ -334,6 +334,27 @@ def _il(text: str) -> str:
     return md.inline_to_latex(md.strip_bare_urls(text), tex_escape)
 
 
+def _recommendation(r: Report) -> str:
+    if not r.recommendation and not r.decision_rationale:
+        return ""
+    out = [r"\section{Recommendation}"]
+    if r.recommendation:
+        out.append(md.inline_to_latex(md.strip_bare_urls(r.recommendation), tex_escape))
+    if r.decision_rationale:
+        rows = ""
+        for d in r.decision_rationale:
+            rows += (_il(d.get("requirement", "")) + " & " + _il(d.get("decision", "")) + " & "
+                     + _il(d.get("reason", "")) + r" \\" + "\n")
+        out.append(
+            r"\vspace{4pt}\subsection*{Decision Rationale}"
+            r"\small\begin{tabularx}{\linewidth}{@{}>{\RaggedRight\arraybackslash}p{34mm} "
+            r">{\RaggedRight\arraybackslash}p{34mm} L@{}}\toprule "
+            r"\sffamily\bfseries Requirement & \sffamily\bfseries Decision & "
+            r"\sffamily\bfseries Reason \\\midrule " + rows
+            + r"\bottomrule\end{tabularx}\normalsize")
+    return "\n\n".join(out)
+
+
 def _strategic(r: Report) -> str:
     if not r.strategic_implications:
         return ""
@@ -353,16 +374,22 @@ def _closing(r: Report) -> str:
     return "\n\n".join(out)
 
 
+def _href(url: str) -> str:
+    """Clickable, escaped reference: \\href{target}{monospace text}."""
+    target = url.replace("\\", "").replace("%", r"\%").replace("#", r"\#")
+    return r"\href{" + target + "}{" + tex_url(url) + "}"
+
+
 def _sources(r: Report) -> str:
     if not r.source_records and not r.sources:
         # Compact, honest line instead of a near-empty Source Register page.
         return (r"\section{Source Verification}"
                 r"{\color{mute}External verification unavailable for this run.}")
-    out = [r"\section{Source Register}"]
+    out = [r"\section{References}"]
     if r.source_records:
         rows = ""
         for s in r.source_records:
-            rows += (f"{s.ref} & " + tex_url(s.url) + " & " + tex_escape(s.stype) + " & "
+            rows += (f"{s.ref} & " + _href(s.url) + " & " + tex_escape(s.stype) + " & "
                      + tex_escape(s.credibility) + " & " + tex_escape(s.freshness) + r" \\" + "\n")
         out.append(
             r"\small\begin{longtable}{@{}r >{\RaggedRight\arraybackslash}p{58mm}@{\hspace{6mm}} l l l@{}}"
@@ -371,7 +398,7 @@ def _sources(r: Report) -> str:
             r"\par{\footnotesize\color{mute}Type, credibility and freshness are internal "
             r"analyst heuristics, not objective ratings.}")
     elif r.sources:
-        items = "".join(r"\item " + tex_url(s) for s in r.sources)
+        items = "".join(r"\item " + _href(s) for s in r.sources)
         out.append(r"\begin{enumerate}[leftmargin=16pt,itemsep=1pt]" + items + r"\end{enumerate}")
     else:
         out.append(r"{\color{mute}External source verification was not available for this analysis.}")
@@ -405,6 +432,7 @@ def render_tex(report: Report, chart_keys: set[str] | None = None) -> str:
         _cover(report),
         _exec_summary(report),
         _findings(report),
+        _recommendation(report),
         _scorecard(report.scorecard) if report.scorecard else "",
         _visual(chart_keys),
         _quality(report),

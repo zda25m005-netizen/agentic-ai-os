@@ -511,6 +511,17 @@ def _body(c: _Canvas, r: Report) -> None:
             elif f.evidence:
                 c.para("Evidence: " + "   ".join(f.evidence), 8.5, gap=8, color=_ACCENT)
 
+    if r.recommendation or r.decision_rationale:
+        _section_title(c, n, "Recommendation")
+        n += 1
+        if r.recommendation:
+            _render_blocks(c, md.parse(md.strip_bare_urls(r.recommendation)))
+        if r.decision_rationale:
+            rows = [[d.get("requirement", ""), d.get("decision", ""), d.get("reason", "")]
+                    for d in r.decision_rationale]
+            _table(c, Table(["Requirement", "Decision", "Reason"], rows,
+                            "Decision rationale — requirement to design decision."))
+
     if r.scorecard:
         _section_title(c, n, "Competitive Scorecard")
         n += 1

@@ -90,30 +90,27 @@ def test_zero_source_register_is_honest():
     assert is_valid_pdf(render_report(r))
 
 
-def test_integrity_flags_unverified_figures():
-    # confident percentages/currency with no source -> flagged + caveat + honest box
+def test_unsupported_figures_are_scrubbed():
+    # fabricated percentages/currency with no source are REMOVED (not shown as fact)
     m = _mission("Compare A and B")
     tasks = [_task(1, "Accuracy", "A hits 95% accuracy, B hits 92%."),
              _task(2, "Cost", "B is cheapest at $300."),
              _task(3, "Scale", "A scales best across corpora.")]
     r = build_report(m, tasks)
-    assert r.findings[0].unverified_figures is True
-    assert r.findings[1].unverified_figures is True
-    assert r.findings[2].unverified_figures is False   # no figures
-    assert r.integrity["unverified_figures"] == 2
-    assert r.integrity["sources_analyzed"] == 0
-    assert r.integrity["claims_extracted"] == 3
-    assert r.integrity["unsupported"] == 3
-    assert any("not backed by external sources" in x for x in r.limitations)
-    assert is_valid_pdf(render_report(r))  # renders without a blank register page
+    assert "95%" not in r.findings[0].body and "92%" not in r.findings[0].body
+    assert "$300" not in r.findings[1].body
+    assert "scales best" in r.findings[2].body            # untouched (no figures)
+    assert r.integrity["unverified_figures"] == 0         # nothing left to flag
+    assert any("quantitative figures" in x for x in r.limitations)  # caveat present
+    assert is_valid_pdf(render_report(r))
 
 
-def test_source_backed_figures_not_flagged():
+def test_source_backed_figures_are_kept():
     m = _mission("Compare A and B")
     r = build_report(m, [_task(1, "Accuracy", "A hits 95%. https://arxiv.org/abs/1")])
-    # figure present but the finding is source-backed -> not flagged
+    # figure is kept because the finding is source-backed (not scrubbed)
+    assert "95%" in r.findings[0].body
     assert r.findings[0].unverified_figures is False
-    assert r.integrity["unverified_figures"] == 0
 
 
 def test_all_evidence_metrics_are_consistent():
@@ -158,6 +155,26 @@ async def test_llm_synthesis_merges_snapshot_and_scorecard():
     assert r.integrity["claims_supported"] == 0
     assert r.integrity["overall_confidence"] == "Analytical"
     assert r.coverage.claims_supported == r.integrity["claims_supported"]
+
+
+async def test_llm_recommendation_and_rationale():
+    async def fake(_messages):
+        return json.dumps({
+            "recommendation": "Adopt a hybrid: Router -> Structured store + Vector "
+                              "retrieval -> Composer -> LLM.",
+            "decision_rationale": [
+                {"requirement": "Stable prefs", "decision": "Structured store",
+                 "reason": "Deterministic retrieval"},
+                {"requirement": "Semantic memory", "decision": "Vector DB",
+                 "reason": "Similarity retrieval"},
+            ],
+        })
+    r = await build_report_llm(_mission("Design LLM memory"), [_task(1, "t", "r")], fake)
+    assert "hybrid" in r.recommendation
+    assert len(r.decision_rationale) == 2
+    assert r.decision_rationale[0]["decision"] == "Structured store"
+    pdf = render_report(r)
+    assert is_valid_pdf(pdf)
 
 
 async def test_llm_bad_response_falls_back():

@@ -94,6 +94,8 @@ class Report:
     coverage: EvidenceCoverage | None = None
     trail: ResearchTrail | None = None
     sections: list[ReportSection] = field(default_factory=list)
+    recommendation: str = ""                       # decisive analyst recommendation
+    decision_rationale: list[dict] = field(default_factory=list)  # requirement/decision/reason
     strategic_implications: list[str] = field(default_factory=list)
     methodology: str = ""
     limitations: list[str] = field(default_factory=list)

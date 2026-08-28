@@ -162,10 +162,22 @@ def _critic_flags(mission: Mission) -> list[str]:
 # numbers presented as facts: percentages and currency figures
 _FIGURE = re.compile(r"\d+(?:\.\d+)?\s?%|\$\s?\d")
 _WORD4 = re.compile(r"[A-Za-z]{4,}")
+# scrub an unsupported percentage/currency figure (with any leading "at/of/~")
+_PCT = re.compile(r"\s*(?:\b(?:at|of|around|about|approximately|reaching|up to|~)\s+)?"
+                  r"\(?\d+(?:\.\d+)?\s?%\)?", re.IGNORECASE)
+_CUR = re.compile(r"\s*(?:\b(?:at|of|around|about|~)\s+)?\(?\$\s?\d[\d,]*(?:\.\d+)?\)?",
+                  re.IGNORECASE)
 _GUARDRAIL = (
-    "This run reports quantitative figures (e.g. percentages) that are not backed by "
-    "external sources; treat them as illustrative model output, not verified facts."
+    "Unsupported quantitative figures (e.g. percentages) generated during analysis were "
+    "removed from the findings; only qualitative, evidence-tagged assessments are shown."
 )
+
+
+def _scrub_figures(text: str) -> str:
+    """Remove fabricated percentage/currency figures from text presented as fact."""
+    s = _CUR.sub("", _PCT.sub("", text or ""))
+    s = re.sub(r"\s+([.,;:)])", r"\1", s)
+    return re.sub(r"\s{2,}", " ", s).strip()
 
 
 def _source_terms(sr) -> set[str]:
@@ -205,7 +217,19 @@ def apply_integrity(report: Report) -> None:
             fterms = {w.lower() for w in _WORD4.findall(f"{f.title} {f.body}")}
             f.source_refs = [sr.ref for sr in srs if _source_terms(sr) & fterms][:3]
 
-    # 2) Confidence comes ONLY from the evidence graph, not the LLM's label.
+    # 2) Never present an unsupported figure as fact: scrub percentages/currency from
+    #    findings that have no source backing (keep them where a source is cited).
+    scrubbed = False
+    for f in report.findings:
+        if not f.source_refs and _FIGURE.search(f"{f.title} {f.body}"):
+            f.title, f.body = _scrub_figures(f.title), _scrub_figures(f.body)
+            scrubbed = True
+    for m in report.snapshot:  # headline snapshot values must stay qualitative
+        if _FIGURE.search(m.value):
+            m.value = _scrub_figures(m.value) or m.value
+            scrubbed = True
+
+    # 3) Confidence comes ONLY from the evidence graph, not the LLM's label.
     for f in report.findings:
         f.confidence = _conf_from_refs(f.source_refs, by_ref)
         f.unverified_figures = (not f.source_refs) and bool(_FIGURE.search(f.body or ""))
@@ -240,7 +264,8 @@ def apply_integrity(report: Report) -> None:
         "unverified_figures": unverified,
         "overall_confidence": overall,
     }
-    if unverified and not any("not backed by external sources" in x for x in report.limitations):
+    if (scrubbed or unverified) and not any(
+            "quantitative figures" in x for x in report.limitations):
         report.limitations.insert(0, _GUARDRAIL)
 
 
@@ -268,11 +293,18 @@ _SYS = (
     "scorecard (optional): an object with dimensions (list), entities (list), and "
     "scores (map from entity to a list of integers 0-5 per dimension). Scores are a "
     "qualitative analyst assessment only, never a measured statistic. "
-    "strategic_implications: a list of 2-4 strings, each a sharp 'so what' insight "
-    "(what the finding means strategically and what a competitor/investor should do). "
+    "recommendation: one decisive paragraph stating what to do and, when the objective "
+    "is a design/architecture question, the recommended component pipeline in words "
+    "(e.g. 'Router -> Structured store + Vector retrieval -> Composer -> LLM'). "
+    "decision_rationale: a list of objects with requirement, decision, and reason. "
+    "strategic_implications: a list of 2-4 strings, each a sharp 'so what' insight. "
     "limitations: a list of strings. "
-    "Base everything strictly on the provided material. NEVER invent sources, URLs, "
-    "or quantitative market figures."
+    "CRITICAL naming: name snapshot and scorecard entities using the ACTUAL options in "
+    "the objective (e.g. 'Vector Retrieval (RAG)', 'Fine-Tuning', 'Structured Memory'), "
+    "never generic placeholders like 'Approach A/B/C', and use the same names everywhere. "
+    "Base everything strictly on the provided material. NEVER invent sources or URLs, and "
+    "NEVER state specific percentages, dollar amounts, or market-share numbers as fact; "
+    "use qualitative language and the 0-5 scores instead."
 )
 
 
@@ -294,6 +326,15 @@ def _synthesize_into(report: Report, data: dict) -> None:
             report.scorecard = Scorecard(
                 dimensions=[str(d) for d in sc["dimensions"]],
                 entities=[str(e) for e in sc["entities"]], scores=scores)
+    rec = data.get("recommendation")
+    if isinstance(rec, str) and rec.strip():
+        report.recommendation = rec.strip()
+    dr = data.get("decision_rationale")
+    if isinstance(dr, list) and dr:
+        report.decision_rationale = [
+            {"requirement": str(d.get("requirement", "")), "decision": str(d.get("decision", "")),
+             "reason": str(d.get("reason", ""))}
+            for d in dr if isinstance(d, dict) and d.get("requirement")][:8]
     si = data.get("strategic_implications")
     if isinstance(si, list) and si:
         report.strategic_implications = [str(x) for x in si][:4]
