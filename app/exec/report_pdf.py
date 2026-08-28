@@ -11,6 +11,7 @@ from __future__ import annotations
 import math
 import re
 
+from app.exec import markdown as md
 from app.exec.report import Report, Table
 
 _PW, _PH = 595, 842          # A4 points
@@ -26,8 +27,9 @@ _URL_RE = re.compile(r"https?://\S+")
 
 
 def _prose(text: str) -> str:
-    """Body text with bare URLs removed (they live in the Source Register)."""
+    """Inline body text: bare URLs removed, inline Markdown flattened to clean text."""
     s = _URL_RE.sub("", text or "")
+    s = md.inline_to_plain(s)          # **bold**/`code`/[t](u) -> plain, structurally
     s = re.sub(r"\s+([.,;:])", r"\1", s)
     return re.sub(r"\s{2,}", " ", s).strip()
 
@@ -450,6 +452,38 @@ def _exec_confidence(c: _Canvas, r: Report) -> None:
     c.y += 16
 
 
+def _bullet(c: _Canvas, marker: str, text: str, indent: float = 18) -> None:
+    lines = _wrap(text, 10, _R - (_L + indent)) or [""]
+    c.ensure(len(lines) * 14 + 2)
+    c.text(_L + 4, c.y + 10, 10, marker, color=_MUTE)
+    for ln in lines:
+        c.text(_L + indent, c.y + 10, 10, ln)
+        c.y += 14
+    c.y += 2
+
+
+def _render_blocks(c: _Canvas, blocks) -> None:
+    """Render a Markdown AST onto the canvas (headings, paras, lists, code, tables)."""
+    for b in blocks:
+        if isinstance(b, md.Heading):
+            c.ensure(22)
+            c.y += 4
+            c.text(_L, c.y + 10, 11, md.inline_to_plain(b.text)[:80], bold=True, color=_ACCENT)
+            c.y += 18
+        elif isinstance(b, md.Para):
+            c.para(md.inline_to_plain(b.text), 10.5)
+        elif isinstance(b, md.ListBlock):
+            for i, it in enumerate(b.items, 1):
+                _bullet(c, f"{i}." if b.ordered else "-", md.inline_to_plain(it))
+            c.y += 4
+        elif isinstance(b, md.Code):
+            for ln in b.text.split("\n"):
+                c.para(ln or " ", 9, gap=0, color=_MUTE)
+            c.y += 4
+        elif isinstance(b, md.Table):
+            _table(c, Table(b.header, b.rows, ""))
+
+
 def _body(c: _Canvas, r: Report) -> None:
     n = 1
     if r.snapshot:
@@ -535,8 +569,8 @@ def _body(c: _Canvas, r: Report) -> None:
     for sec in r.sections:
         _section_title(c, n, sec.heading)
         n += 1
-        for p in sec.paragraphs:
-            c.para(_prose(p), 10.5)
+        body = md.strip_bare_urls("\n\n".join(sec.paragraphs))
+        _render_blocks(c, md.parse(body))
         if sec.table:
             _table(c, sec.table)
 

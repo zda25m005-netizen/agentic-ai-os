@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 
+from app.exec import markdown as md
 from app.exec.latex.escape import tex_escape, tex_url
 from app.exec.report import Report, ReportSection, Scorecard, Table
 
@@ -155,13 +156,13 @@ def _overall_conf(r: Report) -> str:
 def _exec_summary(r: Report) -> str:
     out = [r"\section{Executive Summary}"]
     if r.executive_summary:
-        out.append(tex_escape(r.executive_summary))
+        out.append(md.inline_to_latex(md.strip_bare_urls(r.executive_summary), tex_escape))
     # Bottom line callout — first substantive finding, else summary lead.
     bl = ""
     if r.findings:
         bl = r.findings[0].body.strip()
     bl = bl or r.executive_summary
-    bl = _URL_RE.sub("", bl).strip()
+    bl = md.inline_to_plain(_URL_RE.sub("", bl)).strip()
     if bl:
         bl = bl.split(". ")[0].rstrip(".") + "."
         out.append(r"\vspace{4pt}\begin{bottomline}"
@@ -199,7 +200,8 @@ def _findings(r: Report) -> str:
                 r"{\sffamily\bfseries\large\color{steel}" + f"{i:02d}" + r"}\quad"
                 r"{\sffamily\bfseries\color{navy}" + tex_escape(f.title) + r"}"
                 r"\hfill\confbadge{" + col + "}{" + tex_escape(f.confidence).upper() + r"}",
-                r"\par\vspace{4pt}" + _prose(f.body[:700])]
+                r"\par\vspace{4pt}"
+                + md.inline_to_latex(md.strip_bare_urls(f.body[:700]), tex_escape)]
         if f.unverified_figures:
             card.append(r"\par\vspace{3pt}{\footnotesize\color{conflow}\sffamily "
                         r"$\triangle$~Contains quantitative figures not backed by any "
@@ -330,21 +332,31 @@ def _table(t: Table) -> str:
             + head + r" \\\midrule " + body + r"\bottomrule\end{tabularx}\normalsize" + cap)
 
 
+def _md_table(header: list[str], rows: list[list[str]]) -> str:
+    return _table(Table(header, rows, ""))
+
+
 def _sections(secs: list[ReportSection]) -> str:
     out = []
     for s in secs:
         out.append(r"\section{" + tex_escape(s.heading) + r"}")
-        for p in s.paragraphs:
-            out.append(_prose(p))
+        # Task/LLM output is Markdown: parse structurally, then render to LaTeX
+        # (headings, bold/italic, lists, tables, code) — never leak raw markup.
+        body = md.strip_bare_urls("\n\n".join(s.paragraphs))
+        out.append(md.to_latex(md.parse(body), tex_escape, table_fn=_md_table))
         if s.table:
             out.append(_table(s.table))
     return "\n\n".join(out)
 
 
+def _il(text: str) -> str:
+    return md.inline_to_latex(md.strip_bare_urls(text), tex_escape)
+
+
 def _strategic(r: Report) -> str:
     if not r.strategic_implications:
         return ""
-    items = "".join(r"\item " + tex_escape(x) for x in r.strategic_implications)
+    items = "".join(r"\item " + _il(x) for x in r.strategic_implications)
     return (r"\section{Strategic Implications}"
             r"\begin{itemize}[leftmargin=14pt,itemsep=3pt,topsep=3pt]" + items + r"\end{itemize}")
 
@@ -352,9 +364,9 @@ def _strategic(r: Report) -> str:
 def _closing(r: Report) -> str:
     out = []
     if r.methodology:
-        out.append(r"\section{Methodology}" + tex_escape(r.methodology))
+        out.append(r"\section{Methodology}" + _il(r.methodology))
     if r.limitations:
-        items = "".join(r"\item " + tex_escape(x) for x in r.limitations)
+        items = "".join(r"\item " + _il(x) for x in r.limitations)
         out.append(r"\section{Limitations \& Caveats}"
                    r"\begin{itemize}[leftmargin=14pt,itemsep=2pt,topsep=3pt]" + items + r"\end{itemize}")
     return "\n\n".join(out)
