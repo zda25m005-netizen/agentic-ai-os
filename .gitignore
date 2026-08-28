@@ -48,3 +48,6 @@ frontend/out/
 eval/results.json
 artifacts/
 eval/finetune_results.json
+
+agentic.db
+mlflow.db
