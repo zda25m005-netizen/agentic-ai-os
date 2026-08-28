@@ -17,6 +17,22 @@ type Metrics = {
 };
 type AgentResult = { answer: string; steps: Step[]; trace: string[]; metrics: Metrics };
 
+async function downloadPdf(title: string, sections: { heading: string; body: string }[]) {
+  const r = await fetch(`${API}/reports/pdf`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title, filename: "agentos-report", sections }),
+  });
+  if (!r.ok) return;
+  const blob = await r.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "agentos-report.pdf";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function FeedbackButtons({ query, answer }: { query: string; answer: string }) {
   const [sent, setSent] = useState<string | null>(null);
   const [showBetter, setShowBetter] = useState(false);
@@ -133,6 +149,9 @@ export default function Playground() {
           <div className="card">
             <h3>Answer</h3>
             <div className="answer">{ask.answer}</div>
+            <div className="feedback">
+              <button className="fb" onClick={() => downloadPdf("AgentOS — RAG Answer", [{ heading: "Question", body: lastQuery }, { heading: "Answer", body: ask.answer }])}>⤓ Download PDF</button>
+            </div>
             <FeedbackButtons query={lastQuery} answer={ask.answer} />
           </div>
           {ask.citations?.length > 0 && (
@@ -155,6 +174,13 @@ export default function Playground() {
           <div className="card">
             <h3>Answer</h3>
             <div className="answer">{agent.answer}</div>
+            <div className="feedback">
+              <button className="fb" onClick={() => downloadPdf("AgentOS — Agent Report", [
+                { heading: "Goal", body: lastQuery },
+                { heading: "Answer", body: agent.answer },
+                { heading: "Plan", body: agent.steps.map((s) => `- [${s.status}] ${s.agent}: ${s.description}`).join("\n") },
+              ])}>⤓ Download PDF</button>
+            </div>
             <FeedbackButtons query={lastQuery} answer={agent.answer} />
           </div>
           {agent.steps?.length > 0 && (

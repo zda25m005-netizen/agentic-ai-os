@@ -243,6 +243,7 @@ export default function MissionDetail({ params }: { params: { id: string } }) {
         <div className="cp-panel cp-qa">
           <div className="cp-panel-h">QUICK ACTIONS</div>
           <button className="cp-action" disabled={status !== "active" || busy !== ""} onClick={() => action("pause", () => api.pause(mission.id))}>❚❚ Pause mission</button>
+          <a className="cp-action" href={`${API}/missions/${mission.id}/report.pdf`} target="_blank" rel="noreferrer">⤓ Download PDF report</a>
           <button className="cp-action" onClick={() => api.createMission(mission.objective, mission.priority).then(load)}>⧉ Clone mission</button>
           <Link className="cp-action" href="/missions">← All missions</Link>
         </div>
