@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 
 from app.exec import markdown as md
-from app.exec.latex.escape import tex_escape, tex_url
+from app.exec.latex.escape import tex_escape
 from app.exec.report import Report, ReportSection, Scorecard, Table
 
 _URL_RE = re.compile(r"https?://\S+")
@@ -374,10 +374,21 @@ def _closing(r: Report) -> str:
     return "\n\n".join(out)
 
 
+def _ref_label(url: str) -> str:
+    """A short, wrapping, human title for a reference (from the URL slug/domain)."""
+    from urllib.parse import unquote
+    path = url.split("?")[0].split("#")[0].rstrip("/")
+    slug = path.rsplit("/", 1)[-1] if "/" in path.split("//")[-1] else ""
+    label = unquote(slug).replace("_", " ").strip()
+    if len(label) < 3:
+        label = url.split("//")[-1].split("/")[0]  # fall back to the domain
+    return label[:70]
+
+
 def _href(url: str) -> str:
-    """Clickable, escaped reference: \\href{target}{monospace text}."""
+    """Clickable reference showing a readable title (wraps), linking to the URL."""
     target = url.replace("\\", "").replace("%", r"\%").replace("#", r"\#")
-    return r"\href{" + target + "}{" + tex_url(url) + "}"
+    return r"\href{" + target + r"}{\color{steel}" + tex_escape(_ref_label(url)) + "}"
 
 
 def _sources(r: Report) -> str:
