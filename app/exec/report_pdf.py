@@ -34,6 +34,17 @@ def _prose(text: str) -> str:
     return re.sub(r"\s{2,}", " ", s).strip()
 
 
+def _ref_label(url: str) -> str:
+    """A short, human title for a reference (from the URL slug/domain)."""
+    from urllib.parse import unquote
+    path = url.split("?")[0].split("#")[0].rstrip("/")
+    slug = path.rsplit("/", 1)[-1] if "/" in path.split("//")[-1] else ""
+    label = unquote(slug).replace("_", " ").strip()
+    if len(label) < 3:
+        label = url.split("//")[-1].split("/")[0]
+    return label[:70]
+
+
 def _overall_conf(r: Report) -> str:
     confs = {f.confidence for f in r.findings}
     for level in ("High", "Medium", "Low"):
@@ -489,7 +500,6 @@ def _body(c: _Canvas, r: Report) -> None:
         bl = (bl.split(". ")[0].rstrip(".") + ".") if bl else ""
         if bl:
             _bottom_line(c, bl[:360])
-        _exec_confidence(c, r)
 
     if r.problem_definition:
         _section_title(c, n, "Problem Definition")
@@ -503,18 +513,9 @@ def _body(c: _Canvas, r: Report) -> None:
             c.ensure(30)
             c.text(_L, c.y, 11, f"{i:02d}", bold=True, color=_ACCENT)
             c.text(_L + 28, c.y, 11, f.title[:58], bold=True)
-            _conf_badge(c, _R - 62, c.y, f.confidence)
             c.y += 15
-            c.para(_prose(f.body), 10, gap=4)
-            if f.unverified_figures:
-                c.para("!  Contains quantitative figures not backed by any source "
-                       "(unverified).", 8.5, gap=4, color=(0.75, 0.20, 0.24))
-            if f.source_refs:
-                refs = ", ".join(f"[{r}]" for r in f.source_refs)
-                c.para(f"Traceability: cites source(s) {refs}  -  see Source Register.",
-                       8.5, gap=8, color=_ACCENT)
-            elif f.evidence:
-                c.para("Evidence: " + "   ".join(f.evidence), 8.5, gap=8, color=_ACCENT)
+            cite = (" " + "".join(f"[{n}]" for n in f.source_refs)) if f.source_refs else ""
+            c.para(_prose(f.body) + cite, 10, gap=8)
 
     for a in r.approaches:
         _section_title(c, n, str(a.get("name", "Approach")))
@@ -566,34 +567,6 @@ def _body(c: _Canvas, r: Report) -> None:
             _table(c, Table(["Requirement", "Decision", "Reason"], rows,
                             "Decision rationale — requirement to design decision."))
 
-    if r.critic_flags:
-        _section_title(c, n, "Quality Control (Critic)")
-        n += 1
-        for fl in r.critic_flags:
-            c.ensure(20)
-            c.text(_L, c.y + 9, 10, "●  Critic flagged topic drift",
-                   bold=True, color=(0.75, 0.20, 0.24))
-            c.y += 14
-            c.para(fl, 9.5, gap=6, color=_MUTE)
-
-    if r.integrity:
-        _section_title(c, n, "Research Integrity")
-        n += 1
-        _integrity(c, r.integrity)
-
-    if r.coverage:
-        _section_title(c, n, "Evidence Coverage")
-        n += 1
-        _coverage(c, r.coverage)
-        if r.source_records:
-            fr = r.freshness or {}
-            c.para(
-                "Source freshness  -  Recent: {r}  ·  Current: {c}  ·  "
-                "Background: {b}  ·  Unknown: {u}.".format(
-                    r=fr.get("Recent", 0), c=fr.get("Current", 0),
-                    b=fr.get("Background", 0), u=fr.get("Unknown", 0)),
-                9.5, color=_MUTE)
-
     # Structured per-approach analysis replaces the generic task-result sections.
     for sec in ([] if r.approaches else r.sections):
         _section_title(c, n, sec.heading)
@@ -604,18 +577,13 @@ def _body(c: _Canvas, r: Report) -> None:
             _table(c, sec.table)
 
     if r.strategic_implications:
-        _section_title(c, n, "Strategic Implications")
+        _section_title(c, n, "Key Takeaways")
         n += 1
         for imp in r.strategic_implications:
             c.ensure(30)
             top = c.y
             c.para(imp, 10.5, gap=8)
             c.rect(_L - 12, top - 6, 3, (c.y - top - 4), fill=_PALETTE[2])
-
-    if r.methodology:
-        _section_title(c, n, "Methodology")
-        n += 1
-        c.para(r.methodology, 10, color=_MUTE)
 
     if r.limitations:
         _section_title(c, n, "Limitations")
@@ -625,26 +593,21 @@ def _body(c: _Canvas, r: Report) -> None:
         c.y += 6
 
     if r.source_records:
-        _section_title(c, n, "Source Register")
+        _section_title(c, n, "References")
         n += 1
-        t = Table(
-            ["#", "Source", "Type", "Cred.", "Freshness"],
-            [[str(s.ref), s.url, s.stype, s.credibility, s.freshness]
-             for s in r.source_records],
-            "Source register - type, credibility, and freshness are internal analyst "
-            "assessments (heuristic), not objective ratings.",
-        )
-        _table(c, t)
+        for s in r.source_records:
+            _bullet(c, f"[{s.ref}]", _ref_label(s.url), indent=26)
+            c.para(s.url, 8.5, gap=6, color=_MUTE)
     elif r.sources:
-        _section_title(c, n, "Source Register")
+        _section_title(c, n, "References")
         n += 1
         for i, s in enumerate(r.sources, 1):
             c.para(f"[{i}] {s}", 9.5, gap=2, color=_MUTE)
     else:
         # No dedicated (near-empty) page — a compact, honest one-liner.
-        _section_title(c, n, "Source Verification")
+        _section_title(c, n, "References")
         n += 1
-        c.para("External verification unavailable for this run.", 10, color=_MUTE)
+        c.para("No external references were available for this report.", 10, color=_MUTE)
 
     if r.appendix:
         c.new_page()

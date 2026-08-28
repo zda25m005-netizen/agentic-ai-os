@@ -64,7 +64,7 @@ def test_render_tex_is_wellformed_and_injection_safe():
 
 def test_render_tex_includes_key_sections():
     tex = render_tex(_report())
-    for marker in ("Executive Summary", "Key Findings", "Source Register", "BOTTOM LINE"):
+    for marker in ("Executive Summary", "Key Findings", "References", "BOTTOM LINE"):
         assert marker in tex
 
 

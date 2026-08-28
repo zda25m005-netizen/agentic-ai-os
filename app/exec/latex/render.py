@@ -162,17 +162,6 @@ def _exec_summary(r: Report) -> str:
         out.append(r"\vspace{4pt}\begin{bottomline}"
                    r"{\sffamily\bfseries\footnotesize BOTTOM LINE}\par\vspace{3pt}"
                    + tex_escape(bl[:400]) + r"\end{bottomline}")
-    # evidence coverage bar (real) + overall qualitative confidence
-    if r.coverage:
-        pct = r.coverage.coverage_pct
-        conf = r.integrity.get("overall_confidence") or _overall_conf(r)
-        col = _CONF_COLOR.get(conf, "confana")
-        out.append(r"\vspace{8pt}{\sffamily\footnotesize\color{mute}EVIDENCE COVERAGE}\par\vspace{3pt}"
-                   + f"\\evbar{{{pct / 100:.3f}}}\\par\\vspace{{2pt}}"
-                   + r"{\footnotesize\color{mute}" + f"{pct}\\% of major claims source-backed "
-                   + f"$\\cdot$ {r.coverage.sources_analyzed} source(s) analysed "
-                   + r"$\cdot$ overall confidence \confbadge{" + col + "}{"
-                   + conf.upper() + r"} (analyst assessment).}")
     # snapshot key figures
     if r.snapshot:
         cells = " & ".join(r"{\sffamily\footnotesize\color{mute}" + tex_escape(m.label.upper())
@@ -189,22 +178,15 @@ def _findings(r: Report) -> str:
         return ""
     out = [r"\section{Key Findings}"]
     for i, f in enumerate(r.findings, 1):
-        col = _CONF_COLOR.get(f.confidence, "confana")
+        # natural inline citation markers [1][2] at the end of the finding
+        cite = ("~" + "".join(f"[{n}]" for n in f.source_refs)) if f.source_refs else ""
         card = [r"\begin{findingcard}",
                 r"{\sffamily\bfseries\large\color{steel}" + f"{i:02d}" + r"}\quad"
-                r"{\sffamily\bfseries\color{navy}" + tex_escape(f.title) + r"}"
-                r"\hfill\confbadge{" + col + "}{" + tex_escape(f.confidence).upper() + r"}",
+                r"{\sffamily\bfseries\color{navy}" + tex_escape(f.title) + r"}",
                 r"\par\vspace{4pt}"
-                + md.inline_to_latex(md.strip_bare_urls(f.body[:700]), tex_escape)]
-        if f.unverified_figures:
-            card.append(r"\par\vspace{3pt}{\footnotesize\color{conflow}\sffamily "
-                        r"$\triangle$~Contains quantitative figures not backed by any "
-                        r"source (unverified).}")
-        if f.source_refs:
-            refs = ", ".join(f"[{n}]" for n in f.source_refs)
-            card.append(r"\par\vspace{3pt}{\footnotesize\color{steel}\sffamily Traceability: cites "
-                        + tex_escape(refs) + r" (see Source Register).}")
-        card.append(r"\end{findingcard}\vspace{6pt}")
+                + md.inline_to_latex(md.strip_bare_urls(f.body[:700]), tex_escape)
+                + (r"~{\color{steel}\footnotesize " + cite + "}" if cite else ""),
+                r"\end{findingcard}\vspace{6pt}"]
         out.append("\n".join(card))
     return "\n".join(out)
 
@@ -408,19 +390,18 @@ def _strategic(r: Report) -> str:
     if not r.strategic_implications:
         return ""
     items = "".join(r"\item " + _il(x) for x in r.strategic_implications)
-    return (r"\section{Strategic Implications}"
+    return (r"\section{Key Takeaways}"
             r"\begin{itemize}[leftmargin=14pt,itemsep=3pt,topsep=3pt]" + items + r"\end{itemize}")
 
 
 def _closing(r: Report) -> str:
-    out = []
-    if r.methodology:
-        out.append(r"\section{Methodology}" + _il(r.methodology))
-    if r.limitations:
-        items = "".join(r"\item " + _il(x) for x in r.limitations)
-        out.append(r"\section{Limitations \& Caveats}"
-                   r"\begin{itemize}[leftmargin=14pt,itemsep=2pt,topsep=3pt]" + items + r"\end{itemize}")
-    return "\n\n".join(out)
+    # Methodology (how the AI analysed sources) is intentionally omitted from the
+    # user-facing report; only subject-level caveats remain.
+    if not r.limitations:
+        return ""
+    items = "".join(r"\item " + _il(x) for x in r.limitations)
+    return (r"\section{Limitations}"
+            r"\begin{itemize}[leftmargin=14pt,itemsep=2pt,topsep=3pt]" + items + r"\end{itemize}")
 
 
 def _ref_label(url: str) -> str:
@@ -447,21 +428,17 @@ def _sources(r: Report) -> str:
                 r"{\color{mute}External verification unavailable for this run.}")
     out = [r"\section{References}"]
     if r.source_records:
-        rows = ""
+        items = ""
         for s in r.source_records:
-            rows += (f"{s.ref} & " + _href(s.url) + " & " + tex_escape(s.stype) + " & "
-                     + tex_escape(s.credibility) + " & " + tex_escape(s.freshness) + r" \\" + "\n")
-        out.append(
-            r"\small\begin{longtable}{@{}r >{\RaggedRight\arraybackslash}p{58mm}@{\hspace{6mm}} l l l@{}}"
-            r"\toprule \# & Source & Type & Cred. & Freshness \\\midrule\endhead "
-            + rows + r"\bottomrule\end{longtable}\normalsize"
-            r"\par{\footnotesize\color{mute}Type, credibility and freshness are internal "
-            r"analyst heuristics, not objective ratings.}")
+            items += (r"\item[{[" + str(s.ref) + r"]}] " + _href(s.url)
+                      + r"\\{\footnotesize\color{mute}\url{" + s.url + "}}\n")
+        out.append(r"\begin{description}[leftmargin=26pt,itemsep=3pt,topsep=3pt,"
+                   r"font=\normalfont]" + items + r"\end{description}")
     elif r.sources:
         items = "".join(r"\item " + _href(s) for s in r.sources)
         out.append(r"\begin{enumerate}[leftmargin=16pt,itemsep=1pt]" + items + r"\end{enumerate}")
     else:
-        out.append(r"{\color{mute}External source verification was not available for this analysis.}")
+        out.append(r"{\color{mute}No external references were available for this report.}")
     return "\n\n".join(out)
 
 
@@ -502,14 +479,10 @@ def render_tex(report: Report, chart_keys: set[str] | None = None) -> str:
         _visual(chart_keys),
         _failure_analysis(report),
         _recommendation(report),
-        _quality(report),
-        _integrity(report),
-        _coverage_freshness(report),
         detailed,
-        _strategic(report),
-        _closing(report),
-        _sources(report),
-        _appendix(report.appendix),
+        _strategic(report),      # rendered as "Key Takeaways"
+        _closing(report),        # limitations only (no methodology)
+        _sources(report),        # References
         r"\end{document}",
     ]
     return "\n\n".join(p for p in parts if p)

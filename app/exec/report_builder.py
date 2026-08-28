@@ -124,12 +124,12 @@ def build_report(mission: Mission, tasks: list[Task]) -> Report:
     ]
 
     limitations = [
-        "External source verification was limited to the sources gathered for this report.",
-        "Interpretive statements are analytical assessments, not measured facts.",
+        "This report draws on a limited set of gathered references and may not be exhaustive.",
+        "Interpretive statements reflect analysis of the available material, not measured facts.",
     ]
     if not sources:
         limitations.insert(
-            0, "No external sources were available; findings rest on analytical synthesis.")
+            0, "External references were limited for this report; conclusions are indicative.")
 
     report = Report(
         title=_clean(objective), subtitle="Analytical Report",
@@ -168,8 +168,8 @@ _PCT = re.compile(r"\s*(?:\b(?:at|of|around|about|approximately|reaching|up to|~
 _CUR = re.compile(r"\s*(?:\b(?:at|of|around|about|~)\s+)?\(?\$\s?\d[\d,]*(?:\.\d+)?\)?",
                   re.IGNORECASE)
 _GUARDRAIL = (
-    "Unsupported quantitative figures (e.g. percentages) generated during analysis were "
-    "removed from the findings; only qualitative, evidence-tagged assessments are shown."
+    "Specific quantitative figures that could not be attributed to a reference were "
+    "omitted; comparisons rely on qualitative judgement."
 )
 
 
@@ -270,9 +270,8 @@ def apply_integrity(report: Report) -> None:
 
 
 def _default_summary(objective: str, n: int) -> str:
-    return (f"This report analyzes {objective[:1].lower() + objective[1:]}. Findings are "
-            "tagged by the strength of their supporting evidence; interpretive statements "
-            "are analytical assessments rather than measured facts.")
+    return (f"This report analyzes {objective[:1].lower() + objective[1:]}, comparing the "
+            "available options and setting out a recommended direction.")
 
 
 def _methodology() -> str:
