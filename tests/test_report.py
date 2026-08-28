@@ -1,6 +1,7 @@
 """Rich analytical report: builder (deterministic + LLM synthesis) + renderer."""
 import json
 
+from app.exec.latex.render import render_tex
 from app.exec.pdf import is_valid_pdf, page_count
 from app.exec.report import (
     EvidenceCoverage,
@@ -175,6 +176,36 @@ async def test_llm_recommendation_and_rationale():
     assert r.decision_rationale[0]["decision"] == "Structured store"
     pdf = render_report(r)
     assert is_valid_pdf(pdf)
+
+
+async def test_llm_structured_report_sections():
+    async def fake(_messages):
+        return json.dumps({
+            "problem_definition": "Long-term memory lets agents recall context.",
+            "approaches": [
+                {"name": "Vector Retrieval (RAG)", "how_it_works": "Embed and retrieve.",
+                 "advantages": ["Fresh"], "disadvantages": ["Chunking"],
+                 "failure_modes": ["Stale index"], "mitigations": ["Reranker"]},
+                {"name": "Fine-Tuning", "how_it_works": "Bake into weights.",
+                 "advantages": ["Behaviour change"], "disadvantages": ["Costly"]},
+            ],
+            "comparative_analysis": "RAG leads on freshness; fine-tuning on behaviour.",
+            "failure_analysis": [
+                {"failure": "Stale retrieval", "impact": "Outdated answers",
+                 "mitigation": "Re-index"}],
+        })
+    m = _mission("Evaluate RAG vs Fine-Tuning for LLM memory")
+    r = await build_report_llm(m, [_task(1, "t", "r")], fake)
+    assert r.problem_definition
+    assert len(r.approaches) == 2
+    assert r.approaches[0]["name"] == "Vector Retrieval (RAG)"
+    assert r.approaches[0]["advantages"] == ["Fresh"]
+    assert r.comparative_analysis and len(r.failure_analysis) == 1
+    # structured approaches replace the generic task-result sections in the render
+    tex = render_tex(r)
+    assert r"\section{Vector Retrieval (RAG)}" in tex
+    assert "How it works" in tex and "Failure Mode Analysis" in tex
+    assert is_valid_pdf(render_report(r))
 
 
 async def test_llm_bad_response_falls_back():

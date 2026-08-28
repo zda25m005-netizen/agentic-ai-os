@@ -491,6 +491,11 @@ def _body(c: _Canvas, r: Report) -> None:
             _bottom_line(c, bl[:360])
         _exec_confidence(c, r)
 
+    if r.problem_definition:
+        _section_title(c, n, "Problem Definition")
+        n += 1
+        _render_blocks(c, md.parse(md.strip_bare_urls(r.problem_definition)))
+
     if r.findings:
         _section_title(c, n, "Key Findings")
         n += 1
@@ -511,6 +516,45 @@ def _body(c: _Canvas, r: Report) -> None:
             elif f.evidence:
                 c.para("Evidence: " + "   ".join(f.evidence), 8.5, gap=8, color=_ACCENT)
 
+    for a in r.approaches:
+        _section_title(c, n, str(a.get("name", "Approach")))
+        n += 1
+        if a.get("how_it_works"):
+            c.text(_L, c.y + 10, 10.5, "How it works", bold=True, color=_ACCENT)
+            c.y += 16
+            _render_blocks(c, md.parse(md.strip_bare_urls(a["how_it_works"])))
+        for label, key in (("Advantages", "advantages"), ("Disadvantages", "disadvantages"),
+                           ("Failure modes", "failure_modes"), ("Mitigations", "mitigations")):
+            items = a.get(key) or []
+            if items:
+                c.text(_L, c.y + 10, 10.5, label, bold=True, color=_ACCENT)
+                c.y += 16
+                for it in items:
+                    _bullet(c, "-", md.inline_to_plain(str(it)))
+                c.y += 2
+
+    if r.comparative_analysis:
+        _section_title(c, n, "Comparative Analysis")
+        n += 1
+        _render_blocks(c, md.parse(md.strip_bare_urls(r.comparative_analysis)))
+
+    if r.scorecard:
+        _section_title(c, n, "Decision Matrix")
+        n += 1
+        _scorecard(c, r.scorecard)
+        _section_title(c, n, "Visual Analysis")
+        n += 1
+        _bar_chart(c, r.scorecard)
+        _heatmap(c, r.scorecard)
+        _radar(c, r.scorecard)
+
+    if r.failure_analysis:
+        _section_title(c, n, "Failure Mode Analysis")
+        n += 1
+        rows = [[d.get("failure", ""), d.get("impact", ""), d.get("mitigation", "")]
+                for d in r.failure_analysis]
+        _table(c, Table(["Failure", "Impact", "Mitigation"], rows, ""))
+
     if r.recommendation or r.decision_rationale:
         _section_title(c, n, "Recommendation")
         n += 1
@@ -521,16 +565,6 @@ def _body(c: _Canvas, r: Report) -> None:
                     for d in r.decision_rationale]
             _table(c, Table(["Requirement", "Decision", "Reason"], rows,
                             "Decision rationale — requirement to design decision."))
-
-    if r.scorecard:
-        _section_title(c, n, "Competitive Scorecard")
-        n += 1
-        _scorecard(c, r.scorecard)
-        _section_title(c, n, "Visual Analysis")
-        n += 1
-        _bar_chart(c, r.scorecard)
-        _heatmap(c, r.scorecard)
-        _radar(c, r.scorecard)
 
     if r.critic_flags:
         _section_title(c, n, "Quality Control (Critic)")
@@ -560,7 +594,8 @@ def _body(c: _Canvas, r: Report) -> None:
                     b=fr.get("Background", 0), u=fr.get("Unknown", 0)),
                 9.5, color=_MUTE)
 
-    for sec in r.sections:
+    # Structured per-approach analysis replaces the generic task-result sections.
+    for sec in ([] if r.approaches else r.sections):
         _section_title(c, n, sec.heading)
         n += 1
         body = md.strip_bare_urls("\n\n".join(sec.paragraphs))

@@ -89,7 +89,11 @@ class Report:
     meta: dict = field(default_factory=dict)
     snapshot: list[Metric] = field(default_factory=list)
     executive_summary: str = ""
+    problem_definition: str = ""                    # what the topic is / why it matters
     findings: list[Finding] = field(default_factory=list)
+    approaches: list[dict] = field(default_factory=list)   # per-option deep dive
+    comparative_analysis: str = ""                  # narrative across dimensions
+    failure_analysis: list[dict] = field(default_factory=list)  # failure/impact/mitigation
     scorecard: Scorecard | None = None
     coverage: EvidenceCoverage | None = None
     trail: ResearchTrail | None = None

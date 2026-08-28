@@ -334,6 +334,55 @@ def _il(text: str) -> str:
     return md.inline_to_latex(md.strip_bare_urls(text), tex_escape)
 
 
+def _problem(r: Report) -> str:
+    if not r.problem_definition:
+        return ""
+    return r"\section{Problem Definition}" + _il(r.problem_definition)
+
+
+def _bullets(label: str, items: list) -> str:
+    if not items:
+        return ""
+    li = "".join(r"\item " + _il(str(x)) for x in items)
+    return (r"\subsection*{" + tex_escape(label) + r"}"
+            r"\begin{itemize}[leftmargin=14pt,itemsep=1pt,topsep=2pt]" + li + r"\end{itemize}")
+
+
+def _approaches(r: Report) -> str:
+    if not r.approaches:
+        return ""
+    out = []
+    for a in r.approaches:
+        out.append(r"\section{" + tex_escape(str(a.get("name", "Approach"))) + r"}")
+        if a.get("how_it_works"):
+            out.append(r"\subsection*{How it works}" + _il(a["how_it_works"]))
+        out.append(_bullets("Advantages", a.get("advantages", [])))
+        out.append(_bullets("Disadvantages", a.get("disadvantages", [])))
+        out.append(_bullets("Failure modes", a.get("failure_modes", [])))
+        out.append(_bullets("Mitigations", a.get("mitigations", [])))
+    return "\n\n".join(p for p in out if p)
+
+
+def _comparative(r: Report) -> str:
+    if not r.comparative_analysis:
+        return ""
+    return r"\section{Comparative Analysis}" + _il(r.comparative_analysis)
+
+
+def _failure_analysis(r: Report) -> str:
+    if not r.failure_analysis:
+        return ""
+    rows = ""
+    for d in r.failure_analysis:
+        rows += (_il(d.get("failure", "")) + " & " + _il(d.get("impact", "")) + " & "
+                 + _il(d.get("mitigation", "")) + r" \\" + "\n")
+    return (r"\section{Failure Mode Analysis}"
+            r"\small\begin{tabularx}{\linewidth}{@{}L L L@{}}\toprule "
+            r"\sffamily\bfseries Failure & \sffamily\bfseries Impact & "
+            r"\sffamily\bfseries Mitigation \\\midrule " + rows
+            + r"\bottomrule\end{tabularx}\normalsize")
+
+
 def _recommendation(r: Report) -> str:
     if not r.recommendation and not r.decision_rationale:
         return ""
@@ -436,20 +485,27 @@ def render_tex(report: Report, chart_keys: set[str] | None = None) -> str:
     will write into the compile directory; only those are \\includegraphics'd.
     """
     chart_keys = chart_keys or set()
+    # When the LLM supplied structured per-approach analysis, it replaces the generic
+    # task-result sections (which would otherwise duplicate the content).
+    detailed = "" if report.approaches else _sections(report.sections)
     parts = [
         _PREAMBLE,
         _defs(report),
         r"\begin{document}",
         _cover(report),
         _exec_summary(report),
+        _problem(report),
         _findings(report),
-        _recommendation(report),
+        _approaches(report),
+        _comparative(report),
         _scorecard(report.scorecard) if report.scorecard else "",
         _visual(chart_keys),
+        _failure_analysis(report),
+        _recommendation(report),
         _quality(report),
         _integrity(report),
         _coverage_freshness(report),
-        _sections(report.sections),
+        detailed,
         _strategic(report),
         _closing(report),
         _sources(report),

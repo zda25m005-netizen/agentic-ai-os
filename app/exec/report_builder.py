@@ -290,6 +290,13 @@ _SYS = (
     "Challenger, Biggest Risk) when relevant. "
     "findings: a list of objects with title, body, and confidence (High, Medium, or "
     "Low). "
+    "problem_definition: 1-2 sentences defining the topic and why it matters. "
+    "approaches (optional): a list of objects, one per option in the objective, each "
+    "with name, how_it_works (string), advantages (list), disadvantages (list), "
+    "failure_modes (list), mitigations (list). Use the objective's real option names. "
+    "comparative_analysis (optional): a short paragraph comparing the options across "
+    "the relevant dimensions (accuracy, freshness, cost, scalability, reliability). "
+    "failure_analysis (optional): a list of objects with failure, impact, mitigation. "
     "scorecard (optional): an object with dimensions (list), entities (list), and "
     "scores (map from entity to a list of integers 0-5 per dimension). Scores are a "
     "qualitative analyst assessment only, never a measured statistic. "
@@ -306,6 +313,20 @@ _SYS = (
     "NEVER state specific percentages, dollar amounts, or market-share numbers as fact; "
     "use qualitative language and the 0-5 scores instead."
 )
+
+
+def _norm_approach(a: dict) -> dict:
+    def _lst(key: str) -> list[str]:
+        v = a.get(key)
+        return [str(x) for x in v][:6] if isinstance(v, list) else []
+    return {
+        "name": str(a.get("name", ""))[:80],
+        "how_it_works": str(a.get("how_it_works", "")),
+        "advantages": _lst("advantages"),
+        "disadvantages": _lst("disadvantages"),
+        "failure_modes": _lst("failure_modes"),
+        "mitigations": _lst("mitigations"),
+    }
 
 
 def _synthesize_into(report: Report, data: dict) -> None:
@@ -326,6 +347,22 @@ def _synthesize_into(report: Report, data: dict) -> None:
             report.scorecard = Scorecard(
                 dimensions=[str(d) for d in sc["dimensions"]],
                 entities=[str(e) for e in sc["entities"]], scores=scores)
+    pd = data.get("problem_definition")
+    if isinstance(pd, str) and pd.strip():
+        report.problem_definition = pd.strip()
+    ap = data.get("approaches")
+    if isinstance(ap, list) and ap:
+        report.approaches = [
+            _norm_approach(a) for a in ap if isinstance(a, dict) and a.get("name")][:5]
+    ca = data.get("comparative_analysis")
+    if isinstance(ca, str) and ca.strip():
+        report.comparative_analysis = ca.strip()
+    fa = data.get("failure_analysis")
+    if isinstance(fa, list) and fa:
+        report.failure_analysis = [
+            {"failure": str(d.get("failure", "")), "impact": str(d.get("impact", "")),
+             "mitigation": str(d.get("mitigation", ""))}
+            for d in fa if isinstance(d, dict) and d.get("failure")][:8]
     rec = data.get("recommendation")
     if isinstance(rec, str) and rec.strip():
         report.recommendation = rec.strip()
