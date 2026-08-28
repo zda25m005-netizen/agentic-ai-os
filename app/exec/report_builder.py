@@ -15,7 +15,7 @@ import re
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
-from app.exec.evidence import Claim, ClaimType, EvidenceLedger
+from app.exec.evidence import Claim, ClaimType, EvidenceLedger, assess_freshness
 from app.exec.report import (
     EvidenceCoverage,
     Finding,
@@ -24,6 +24,7 @@ from app.exec.report import (
     ReportSection,
     ResearchTrail,
     Scorecard,
+    SourceRecord,
     Table,
 )
 from app.missions.models import Mission, Task
@@ -72,6 +73,7 @@ def build_report(mission: Mission, tasks: list[Task]) -> Report:
 
     # Evidence ledger: register each finding's URLs as sources, tag each finding as a
     # claim, and let confidence be *earned* from source count + quality (not guessed).
+    now = datetime.now(UTC)
     ledger = EvidenceLedger()
     findings: list[Finding] = []
     for t in done[:6]:
@@ -82,9 +84,19 @@ def build_report(mission: Mission, tasks: list[Task]) -> Report:
         findings.append(Finding(
             title=_clean(t.description)[:80], body=(t.result or "").strip()[:600],
             confidence=conf, evidence=[ledger.sources[i].url for i in idxs][:3],
+            source_refs=[i + 1 for i in idxs],  # 1-based, for claim traceability
         ))
 
     sources = [s.url for s in ledger.sources]
+    source_records = [
+        SourceRecord(
+            ref=i + 1, url=s.url, publisher=s.publisher,
+            stype=s.stype.value.title(), credibility=s.credibility.value,
+            freshness=assess_freshness(s.published, now),
+        )
+        for i, s in enumerate(ledger.sources)
+    ]
+    freshness = ledger.freshness(now)
     cov = ledger.coverage()
     coverage = EvidenceCoverage(
         sources_analyzed=cov["sources_analyzed"], claims_supported=cov["claims_supported"],
@@ -130,7 +142,8 @@ def build_report(mission: Mission, tasks: list[Task]) -> Report:
         snapshot=snapshot, executive_summary=_default_summary(objective, len(done)),
         findings=findings, coverage=coverage, trail=trail, sections=sections,
         methodology=_methodology(mission, tasks, usage), limitations=limitations,
-        sources=sources, appendix=appendix,
+        sources=sources, source_records=source_records, freshness=freshness,
+        appendix=appendix,
     )
 
 

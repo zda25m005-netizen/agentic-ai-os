@@ -338,7 +338,11 @@ def _body(c: _Canvas, r: Report) -> None:
             _conf_badge(c, _R - 62, c.y, f.confidence)
             c.y += 15
             c.para(f.body, 10, gap=4)
-            if f.evidence:
+            if f.source_refs:
+                refs = ", ".join(f"[{r}]" for r in f.source_refs)
+                c.para(f"Traceability: cites source(s) {refs}  -  see Source Register.",
+                       8.5, gap=8, color=_ACCENT)
+            elif f.evidence:
                 c.para("Evidence: " + "   ".join(f.evidence), 8.5, gap=8, color=_ACCENT)
 
     if r.scorecard:
@@ -354,6 +358,14 @@ def _body(c: _Canvas, r: Report) -> None:
         _section_title(c, n, "Evidence Coverage")
         n += 1
         _coverage(c, r.coverage)
+        if r.source_records:
+            fr = r.freshness or {}
+            c.para(
+                "Source freshness  -  Recent: {r}  ·  Current: {c}  ·  "
+                "Background: {b}  ·  Unknown: {u}.".format(
+                    r=fr.get("Recent", 0), c=fr.get("Current", 0),
+                    b=fr.get("Background", 0), u=fr.get("Unknown", 0)),
+                9.5, color=_MUTE)
 
     if r.trail:
         _section_title(c, n, "Research Trail")
@@ -389,9 +401,18 @@ def _body(c: _Canvas, r: Report) -> None:
             c.para("-  " + lim, 10, gap=3, color=_MUTE)
         c.y += 6
 
-    _section_title(c, n, "Sources")
+    _section_title(c, n, "Source Register")
     n += 1
-    if r.sources:
+    if r.source_records:
+        t = Table(
+            ["#", "Source", "Type", "Cred.", "Freshness"],
+            [[str(s.ref), s.url, s.stype, s.credibility, s.freshness]
+             for s in r.source_records],
+            "Source register - type, credibility, and freshness are internal analyst "
+            "assessments (heuristic), not objective ratings.",
+        )
+        _table(c, t)
+    elif r.sources:
         for i, s in enumerate(r.sources, 1):
             c.para(f"[{i}] {s}", 9.5, gap=2, color=_MUTE)
     else:

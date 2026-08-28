@@ -63,6 +63,34 @@ def test_findings_confidence_and_coverage():
     assert r.limitations  # always honest limitations
 
 
+def test_source_register_and_traceability():
+    m = _mission("Compare A and B")
+    tasks = [_task(1, "Research A", "A. https://arxiv.org/abs/1 https://nvidia.com/x")]
+    r = build_report(m, tasks)
+    # bibliography built with metadata
+    assert len(r.source_records) == 2
+    reg = {s.url: s for s in r.source_records}
+    assert reg["https://arxiv.org/abs/1"].stype == "Academic"
+    assert reg["https://arxiv.org/abs/1"].credibility == "High"
+    assert reg["https://arxiv.org/abs/1"].freshness in {
+        "Recent", "Current", "Background", "Unknown"}
+    # each finding traces back to its numbered sources
+    assert r.findings[0].source_refs == [1, 2]
+    # freshness distribution is present
+    assert set(r.freshness) == {"Recent", "Current", "Background", "Unknown"}
+    assert sum(r.freshness.values()) == 2
+    # renders to a valid PDF
+    pdf = render_report(r)
+    assert is_valid_pdf(pdf) and page_count(pdf) >= 1
+
+
+def test_zero_source_register_is_honest():
+    r = build_report(_mission("Explain X"), [_task(1, "Analyze", "no links here")])
+    assert r.source_records == []
+    assert r.findings[0].source_refs == []
+    assert is_valid_pdf(render_report(r))
+
+
 async def test_llm_synthesis_merges_snapshot_and_scorecard():
     async def fake(_messages):
         return json.dumps({

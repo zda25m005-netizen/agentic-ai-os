@@ -25,6 +25,17 @@ class Finding:
     body: str
     confidence: str = "Analytical"   # High | Medium | Low | Analytical
     evidence: list[str] = field(default_factory=list)
+    source_refs: list[int] = field(default_factory=list)  # 1-based refs into source_records
+
+
+@dataclass
+class SourceRecord:
+    ref: int                         # 1-based citation number
+    url: str
+    publisher: str = ""
+    stype: str = ""                  # Academic | News | Government | ...
+    credibility: str = ""            # High | Medium | Low (internal assessment)
+    freshness: str = ""              # Recent | Current | Background | Unknown
 
 
 @dataclass
@@ -86,4 +97,6 @@ class Report:
     methodology: str = ""
     limitations: list[str] = field(default_factory=list)
     sources: list[str] = field(default_factory=list)
+    source_records: list[SourceRecord] = field(default_factory=list)
+    freshness: dict = field(default_factory=dict)
     appendix: list[ReportSection] = field(default_factory=list)
