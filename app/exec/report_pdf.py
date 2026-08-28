@@ -205,24 +205,83 @@ def _dots(c: _Canvas, x: float, y_top: float, score: int, n: int = 5) -> None:
             c.rect(bx, y_top, box, box, stroke=_RULE, lw=0.6)
 
 
+_PALETTE = [_ACCENT, (0.42, 0.46, 0.52), (0.55, 0.35, 0.66), (0.10, 0.55, 0.34)]
+
+
 def _scorecard(c, sc) -> None:
+    """Horizontal filled bars per (entity, dimension) — the █████ look."""
     dims, ents = sc.dimensions, sc.entities
-    label_w = 120
+    label_w = 132
     cellw = (_R - _L - label_w) / max(len(dims), 1)
-    c.ensure(26)
+    barw = cellw - 18
+    c.ensure(24)
     for j, d in enumerate(dims):
-        c.text(_L + label_w + j * cellw, c.y + 12, 8.5, str(d)[:16], bold=True, color=_MUTE)
-    c.y += 22
+        c.text(_L + label_w + j * cellw, c.y + 11, 7.5, str(d)[:15], bold=True, color=_MUTE)
+    c.y += 20
     for e in ents:
-        c.ensure(20)
-        c.text(_L, c.y + 11, 10, str(e)[:18], bold=True)
+        c.ensure(22)
+        c.text(_L, c.y + 13, 10, str(e)[:20], bold=True)
         row = sc.scores.get(e, [])
         for j in range(len(dims)):
-            _dots(c, _L + label_w + j * cellw, c.y + 4, row[j] if j < len(row) else 0)
-        c.line(_L, c.y + 20, _R, c.y + 20, color=_RULE, lw=0.4)
-        c.y += 20
+            s = row[j] if j < len(row) else 0
+            x = _L + label_w + j * cellw
+            c.rect(x, c.y + 7, barw, 9, fill=(0.92, 0.93, 0.95))
+            c.rect(x, c.y + 7, barw * (s / 5.0), 9, fill=_ACCENT)
+            c.text(x + barw + 4, c.y + 14, 8, str(s), color=_MUTE)
+        c.y += 22
     c.y += 5
     c.text(_L, c.y, 8.5, "Scoring: " + sc.methodology, color=_MUTE)
+    c.y += 16
+
+
+def _bar_chart(c, sc) -> None:
+    ents = sc.entities
+    totals = [sum(sc.scores.get(e, [])) for e in ents]
+    maxv = (len(sc.dimensions) * 5) or 1
+    ch = 118
+    c.ensure(ch + 44)
+    base = c.y + ch
+    slot = (_R - _L) / max(len(ents), 1)
+    bw = min(64, slot * 0.5)
+    for i, (e, v) in enumerate(zip(ents, totals, strict=False)):
+        h = ch * (v / maxv)
+        x = _L + i * slot + (slot - bw) / 2
+        c.rect(x, base - h, bw, h, fill=_PALETTE[i % len(_PALETTE)])
+        c.text(x + 4, base - h - 4, 9, str(v), bold=True)
+        c.text(x, base + 14, 9, str(e)[:14], color=_MUTE)
+    c.line(_L, base, _R, base, color=_RULE)
+    c.y = base + 26
+    c.text(_L, c.y, 8.5,
+           f"Figure 1 - Composite capability score (sum of qualitative assessments, max {maxv}).",
+           color=_MUTE)
+    c.y += 16
+
+
+def _heatmap(c, sc) -> None:
+    dims, ents = sc.dimensions, sc.entities
+    label_w = 132
+    cellw = (_R - _L - label_w) / max(len(dims), 1)
+    ch = 26
+    c.ensure(26)
+    for j, d in enumerate(dims):
+        c.text(_L + label_w + j * cellw, c.y + 11, 7.5, str(d)[:14], color=_MUTE)
+    c.y += 18
+    for e in ents:
+        c.ensure(ch + 2)
+        c.text(_L, c.y + 16, 9.5, str(e)[:20], bold=True)
+        row = sc.scores.get(e, [])
+        for j in range(len(dims)):
+            s = row[j] if j < len(row) else 0
+            frac = s / 5.0
+            col = (1 - frac * 0.82, 1 - frac * 0.45, 1 - frac * 0.10)
+            x = _L + label_w + j * cellw
+            c.rect(x + 2, c.y + 2, cellw - 4, ch - 4, fill=col, stroke=_RULE, lw=0.4)
+            tcol = (0.10, 0.12, 0.15) if frac < 0.6 else (1, 1, 1)
+            c.text(x + cellw / 2 - 3, c.y + 17, 9, str(s), bold=True, color=tcol)
+        c.y += ch
+    c.y += 4
+    c.text(_L, c.y, 8.5, "Figure 2 - Capability heatmap (qualitative assessment, 0-5).",
+           color=_MUTE)
     c.y += 16
 
 
@@ -286,6 +345,10 @@ def _body(c: _Canvas, r: Report) -> None:
         _section_title(c, n, "Competitive Scorecard")
         n += 1
         _scorecard(c, r.scorecard)
+        _section_title(c, n, "Visual Analysis")
+        n += 1
+        _bar_chart(c, r.scorecard)
+        _heatmap(c, r.scorecard)
 
     if r.coverage:
         _section_title(c, n, "Evidence Coverage")
@@ -305,6 +368,15 @@ def _body(c: _Canvas, r: Report) -> None:
         if sec.table:
             _table(c, sec.table)
 
+    if r.strategic_implications:
+        _section_title(c, n, "Strategic Implications")
+        n += 1
+        for imp in r.strategic_implications:
+            c.ensure(30)
+            top = c.y
+            c.para(imp, 10.5, gap=8)
+            c.rect(_L - 12, top - 6, 3, (c.y - top - 4), fill=_PALETTE[2])
+
     if r.methodology:
         _section_title(c, n, "Methodology")
         n += 1
@@ -318,12 +390,24 @@ def _body(c: _Canvas, r: Report) -> None:
         c.y += 6
 
     _section_title(c, n, "Sources")
+    n += 1
     if r.sources:
         for i, s in enumerate(r.sources, 1):
             c.para(f"[{i}] {s}", 9.5, gap=2, color=_MUTE)
     else:
         c.para("External source verification was not available for this analysis.",
                10, color=_MUTE)
+
+    if r.appendix:
+        c.new_page()
+        c.text(_L, c.y, 13, "APPENDIX", bold=True, color=_MUTE)
+        c.y += 22
+        for sec in r.appendix:
+            _section_title(c, None, sec.heading)
+            for p in sec.paragraphs:
+                c.para(p, 10)
+            if sec.table:
+                _table(c, sec.table)
 
 
 def render_report(r: Report) -> bytes:
