@@ -21,18 +21,20 @@ from app.core.config import get_settings
 from app.missions.executor import TaskExecutor, chat_executor
 from app.missions.models import Task
 from app.missions.repository import MissionRepository
-from app.tools.web_search import _fetch, parse_ddg
+from app.tools import wikipedia
 
 ChatFn = Callable[[list[dict]], Awaitable[str]]
 SearchFn = Callable[[str], Awaitable[list[dict]]]
 
 
 async def default_search(query: str, max_results: int = 4) -> list[dict]:
-    """Live web search via the DuckDuckGo tool; [] on any failure (never raises)."""
-    try:
-        return parse_ddg(await _fetch(query), max_results=max_results)
-    except Exception:
-        return []
+    """Keyless live search via Wikipedia; [] on any failure (never raises).
+
+    Wikipedia's search API returns real, citable articles with real URLs — unlike
+    the DuckDuckGo instant-answer endpoint, which returns nothing for analytical
+    queries. Swap in a Tavily/Brave-backed `search_fn` for broader web coverage.
+    """
+    return await wikipedia.search(query, max_results=max_results)
 
 ROLE_PROMPTS: dict[str, str] = {
     "researcher": (

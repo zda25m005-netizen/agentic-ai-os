@@ -77,6 +77,24 @@ def test_parse_summary_empty():
     assert wikipedia.parse_summary({"title": "X", "extract": ""}) == "No summary found."
 
 
+def test_parse_search_returns_real_urls():
+    data = {"query": {"search": [
+        {"title": "CUDA", "snippet": "CUDA is a <span>parallel</span> platform."},
+        {"title": "Graphics processing unit", "snippet": "A GPU accelerates graphics."},
+    ]}}
+    out = wikipedia.parse_search(data, max_results=4)
+    assert out[0]["url"] == "https://en.wikipedia.org/wiki/CUDA"
+    assert "<span>" not in out[0]["snippet"]          # HTML stripped
+    assert out[1]["url"] == "https://en.wikipedia.org/wiki/Graphics_processing_unit"
+
+
+async def test_wikipedia_search_returns_empty_on_error(monkeypatch):
+    async def boom(*a, **k):
+        raise RuntimeError("network down")
+    monkeypatch.setattr(wikipedia, "_search_fetch", boom)
+    assert await wikipedia.search("anything") == []   # never raises
+
+
 async def test_wikipedia_handler(monkeypatch):
     class T(httpx.AsyncBaseTransport):
         async def handle_async_request(self, request):
