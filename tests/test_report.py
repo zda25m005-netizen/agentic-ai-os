@@ -48,16 +48,18 @@ def test_sources_extracted_not_invented():
 
 
 def test_findings_confidence_and_coverage():
+    # Confidence is now *earned*: two sources incl. a High-credibility one -> High;
+    # a single company source -> not High; no source -> Analytical.
     m = _mission("Compare A and B")
-    tasks = [_task(1, "Research A", "A wins. https://a.com"),   # source-backed -> High
+    tasks = [_task(1, "Research A", "A wins. https://arxiv.org/abs/1 and https://a.com"),
              _task(2, "Research B", "B is analytical only")]     # no source -> Analytical
     r = build_report(m, tasks)
     conf = {f.confidence for f in r.findings}
     assert "High" in conf and "Analytical" in conf
-    assert r.coverage.sources_analyzed == 1
+    assert r.coverage.sources_analyzed == 2
     assert r.coverage.claims_supported == 1 and r.coverage.assessments == 1
     assert 0 <= r.coverage.coverage_pct <= 100
-    assert r.trail.sources_used == 1 and r.trail.areas
+    assert r.trail.sources_used == 2 and r.trail.areas
     assert r.limitations  # always honest limitations
 
 

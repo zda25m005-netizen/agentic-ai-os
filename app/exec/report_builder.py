@@ -15,6 +15,7 @@ import re
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
+from app.exec.evidence import Claim, ClaimType, EvidenceLedger
 from app.exec.report import (
     EvidenceCoverage,
     Finding,
@@ -67,21 +68,27 @@ def build_report(mission: Mission, tasks: list[Task]) -> Report:
     """Deterministic, source-honest report (no LLM)."""
     objective = mission.objective
     done = [t for t in tasks if t.status.value == "done" and (t.result or "").strip()]
-    sources = _extract_sources(tasks)
     usage = (mission.meta.get("usage") or {}) if mission.meta else {}
 
+    # Evidence ledger: register each finding's URLs as sources, tag each finding as a
+    # claim, and let confidence be *earned* from source count + quality (not guessed).
+    ledger = EvidenceLedger()
     findings: list[Finding] = []
     for t in done[:6]:
-        ev = _urls(t.result or "")
+        idxs = [ledger.add_source(u) for u in _urls(t.result or "")]
+        claim = Claim(_clean(t.description)[:80], ClaimType.ANALYSIS, idxs)
+        ledger.claims.append(claim)
+        conf = claim.confidence(ledger.sources).value if idxs else "Analytical"
         findings.append(Finding(
             title=_clean(t.description)[:80], body=(t.result or "").strip()[:600],
-            confidence="High" if ev else "Analytical", evidence=ev[:3],
+            confidence=conf, evidence=[ledger.sources[i].url for i in idxs][:3],
         ))
 
-    supported = sum(1 for f in findings if f.evidence)
+    sources = [s.url for s in ledger.sources]
+    cov = ledger.coverage()
     coverage = EvidenceCoverage(
-        sources_analyzed=len(sources), claims_supported=supported,
-        assessments=len(findings) - supported,
+        sources_analyzed=cov["sources_analyzed"], claims_supported=cov["claims_supported"],
+        assessments=cov["unsupported"],
     )
     trail = ResearchTrail(
         sources_used=len(sources), sources_excluded=0,
