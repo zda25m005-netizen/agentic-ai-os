@@ -129,7 +129,7 @@ class _Canvas:
 
 def _cover(c: _Canvas, r: Report) -> None:
     c.rect(0, 0, _PW, 8, fill=_ACCENT)
-    c.text(_L, 150, 9, "AGENTIC AI OS  ·  ANALYTICAL REPORT", bold=True, color=_MUTE)
+    c.text(_L, 150, 9, "RESEARCH & ANALYSIS REPORT", bold=True, color=_MUTE)
     y = 300
     for ln in _wrap(r.title, 30, _R - _L):
         c.text(_L, y, 30, ln, bold=True)
@@ -143,7 +143,6 @@ def _cover(c: _Canvas, r: Report) -> None:
     meta = r.meta
     lines = [
         r.report_type.replace("_", " ").title(),
-        f"Mission #{meta.get('mission_id', '—')}",
         meta.get("date", ""),
         f"{meta.get('sources', 0)} source(s) referenced",
     ]
@@ -370,17 +369,6 @@ def _coverage(c, cov) -> None:
            f"{cov.assessments} analytical assessment(s).", 9.5, color=_MUTE)
 
 
-def _trail(c, tr) -> None:
-    c.para(f"{tr.sources_used} source(s) used  -  {tr.sources_excluded} excluded  -  "
-           f"last verified {tr.last_verified}.", 9.5, gap=6, color=_MUTE)
-    for a in tr.areas:
-        c.ensure(15)
-        c.rect(_L, c.y + 2, 6, 6, fill=(0.09, 0.55, 0.34))
-        c.text(_L + 13, c.y + 9, 10, a)
-        c.y += 15
-    c.y += 6
-
-
 def _conf_badge(c: _Canvas, x: float, y_top: float, conf: str) -> None:
     col = _CONF.get(conf, _MUTE)
     label = conf.upper()
@@ -444,7 +432,7 @@ def _exec_confidence(c: _Canvas, r: Report) -> None:
     c.rect(_L, c.y, _R - _L, 9, fill=(0.91, 0.93, 0.96))
     c.rect(_L, c.y, (_R - _L) * pct / 100, 9, fill=_NAVY)
     c.y += 17
-    conf = _overall_conf(r)
+    conf = r.integrity.get("overall_confidence") or _overall_conf(r)
     c.text(_L, c.y, 9, f"{pct}% of major claims source-backed  -  "
            f"{r.coverage.sources_analyzed} source(s) analysed  -  overall confidence",
            color=_MUTE)
@@ -561,11 +549,6 @@ def _body(c: _Canvas, r: Report) -> None:
                     b=fr.get("Background", 0), u=fr.get("Unknown", 0)),
                 9.5, color=_MUTE)
 
-    if r.trail:
-        _section_title(c, n, "Research Trail")
-        n += 1
-        _trail(c, r.trail)
-
     for sec in r.sections:
         _section_title(c, n, sec.heading)
         n += 1
@@ -636,23 +619,22 @@ def render_report(r: Report) -> bytes:
     _body(c, r)
 
     total = len(c.pages)
-    mid = r.meta.get("mission_id", "-")
 
-    def _label(text: str, y_top: float) -> bytes:
+    def _label(text: str, y_top: float, x: float = _L) -> bytes:
         rr, gg, bb = _MUTE
         body = _esc(text)[:96].encode("latin-1", "replace")
         return (b"%.3f %.3f %.3f rg BT /F1 8 Tf 1 0 0 1 %.1f %.1f Tm (%s) Tj ET"
-                % (rr, gg, bb, _L, _PH - y_top, body))
+                % (rr, gg, bb, x, _PH - y_top, body))
 
-    # header + footer on every content page (page 1 is the cover)
+    # De-branded running header (title only) + footer (page numbers only).
     for idx, ops in enumerate(c.pages, 1):
         if idx == 1:
             continue
-        ops.insert(0, _label(f"AGENTIC AI OS  -  {r.title}", 44.0))
+        ops.insert(0, _label(r.title[:92], 44.0))
         ops.append(b"%.3f %.3f %.3f RG 0.5 w %.1f %.1f m %.1f %.1f l S"
                    % (*_RULE, _L, 52.0, _R, 52.0))
-        footer = f"Agentic AI OS  ·  Mission #{mid}  ·  Generated report  ·  Page {idx} of {total}"
-        ops.append(_label(footer, _PH - 40.0))
+        footer = f"Page {idx} of {total}"
+        ops.append(_label(footer, _PH - 40.0, x=_R - 60))
 
     return _assemble(c.pages)
 
