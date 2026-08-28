@@ -173,8 +173,95 @@ def _table(c: _Canvas, t: Table) -> None:
     c.y += 8
 
 
+_CONF = {"High": (0.09, 0.55, 0.34), "Medium": (0.80, 0.55, 0.10), "Low": (0.75, 0.20, 0.24)}
+
+
+def _snapshot(c: _Canvas, metrics) -> None:
+    cards = metrics[:4]
+    if not cards:
+        return
+    gap = 10
+    w = (_R - _L - gap * (len(cards) - 1)) / len(cards)
+    c.ensure(70)
+    top = c.y
+    for i, m in enumerate(cards):
+        x = _L + i * (w + gap)
+        c.rect(x, top, w, 56, fill=(0.97, 0.98, 0.99), stroke=_RULE)
+        c.text(x + 10, top + 17, 8, m.label.upper(), bold=True, color=_MUTE)
+        vy = top + 36
+        for ln in _wrap(m.value, 13, w - 18)[:2]:
+            c.text(x + 10, vy, 13, ln, bold=True)
+            vy += 14
+    c.y = top + 56 + 16
+
+
+def _dots(c: _Canvas, x: float, y_top: float, score: int, n: int = 5) -> None:
+    box, gap = 8, 3
+    for i in range(n):
+        bx = x + i * (box + gap)
+        if i < score:
+            c.rect(bx, y_top, box, box, fill=_ACCENT)
+        else:
+            c.rect(bx, y_top, box, box, stroke=_RULE, lw=0.6)
+
+
+def _scorecard(c, sc) -> None:
+    dims, ents = sc.dimensions, sc.entities
+    label_w = 120
+    cellw = (_R - _L - label_w) / max(len(dims), 1)
+    c.ensure(26)
+    for j, d in enumerate(dims):
+        c.text(_L + label_w + j * cellw, c.y + 12, 8.5, str(d)[:16], bold=True, color=_MUTE)
+    c.y += 22
+    for e in ents:
+        c.ensure(20)
+        c.text(_L, c.y + 11, 10, str(e)[:18], bold=True)
+        row = sc.scores.get(e, [])
+        for j in range(len(dims)):
+            _dots(c, _L + label_w + j * cellw, c.y + 4, row[j] if j < len(row) else 0)
+        c.line(_L, c.y + 20, _R, c.y + 20, color=_RULE, lw=0.4)
+        c.y += 20
+    c.y += 5
+    c.text(_L, c.y, 8.5, "Scoring: " + sc.methodology, color=_MUTE)
+    c.y += 16
+
+
+def _coverage(c, cov) -> None:
+    c.ensure(40)
+    pct = cov.coverage_pct
+    c.rect(_L, c.y, _R - _L, 10, fill=(0.93, 0.94, 0.96))
+    c.rect(_L, c.y, (_R - _L) * pct / 100, 10, fill=_ACCENT)
+    c.y += 18
+    c.para(f"Evidence coverage {pct}%  -  {cov.sources_analyzed} source(s) analyzed  -  "
+           f"{cov.claims_supported} claim(s) source-backed  -  "
+           f"{cov.assessments} analytical assessment(s).", 9.5, color=_MUTE)
+
+
+def _trail(c, tr) -> None:
+    c.para(f"{tr.sources_used} source(s) used  -  {tr.sources_excluded} excluded  -  "
+           f"last verified {tr.last_verified}.", 9.5, gap=6, color=_MUTE)
+    for a in tr.areas:
+        c.ensure(15)
+        c.rect(_L, c.y + 2, 6, 6, fill=(0.09, 0.55, 0.34))
+        c.text(_L + 13, c.y + 9, 10, a)
+        c.y += 15
+    c.y += 6
+
+
+def _conf_badge(c: _Canvas, x: float, y_top: float, conf: str) -> None:
+    col = _CONF.get(conf, _MUTE)
+    label = conf.upper()
+    c.rect(x, y_top - 9, 8 + len(label) * 5.4, 13, stroke=col, lw=0.8)
+    c.text(x + 5, y_top, 7.5, label, bold=True, color=col)
+
+
 def _body(c: _Canvas, r: Report) -> None:
     n = 1
+    if r.snapshot:
+        c.text(_L, c.y, 11, "EXECUTIVE SNAPSHOT", bold=True, color=_MUTE)
+        c.y += 14
+        _snapshot(c, r.snapshot)
+
     if r.executive_summary:
         _section_title(c, n, "Executive Summary")
         n += 1
@@ -188,9 +275,27 @@ def _body(c: _Canvas, r: Report) -> None:
         for i, f in enumerate(r.findings, 1):
             c.ensure(30)
             c.text(_L, c.y, 11, f"{i:02d}", bold=True, color=_ACCENT)
-            c.text(_L + 28, c.y, 11, f.title, bold=True)
+            c.text(_L + 28, c.y, 11, f.title[:58], bold=True)
+            _conf_badge(c, _R - 62, c.y, f.confidence)
             c.y += 15
-            c.para(f.body, 10, gap=8)
+            c.para(f.body, 10, gap=4)
+            if f.evidence:
+                c.para("Evidence: " + "   ".join(f.evidence), 8.5, gap=8, color=_ACCENT)
+
+    if r.scorecard:
+        _section_title(c, n, "Competitive Scorecard")
+        n += 1
+        _scorecard(c, r.scorecard)
+
+    if r.coverage:
+        _section_title(c, n, "Evidence Coverage")
+        n += 1
+        _coverage(c, r.coverage)
+
+    if r.trail:
+        _section_title(c, n, "Research Trail")
+        n += 1
+        _trail(c, r.trail)
 
     for sec in r.sections:
         _section_title(c, n, sec.heading)
@@ -204,6 +309,13 @@ def _body(c: _Canvas, r: Report) -> None:
         _section_title(c, n, "Methodology")
         n += 1
         c.para(r.methodology, 10, color=_MUTE)
+
+    if r.limitations:
+        _section_title(c, n, "Limitations")
+        n += 1
+        for lim in r.limitations:
+            c.para("-  " + lim, 10, gap=3, color=_MUTE)
+        c.y += 6
 
     _section_title(c, n, "Sources")
     if r.sources:
