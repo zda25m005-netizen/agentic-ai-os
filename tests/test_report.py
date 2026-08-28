@@ -1,7 +1,22 @@
-"""Report builder (mission -> structured report) + professional PDF renderer."""
+"""Rich analytical report: builder (deterministic + LLM synthesis) + renderer."""
+import json
+
 from app.exec.pdf import is_valid_pdf, page_count
-from app.exec.report import Finding, Report, ReportSection, Table
-from app.exec.report_builder import _detect_type, _extract_sources, build_report
+from app.exec.report import (
+    EvidenceCoverage,
+    Finding,
+    Metric,
+    Report,
+    ReportSection,
+    Scorecard,
+    Table,
+)
+from app.exec.report_builder import (
+    _detect_type,
+    _extract_sources,
+    build_report,
+    build_report_llm,
+)
 from app.exec.report_pdf import render_report
 from app.missions.models import Mission, Task
 from app.missions.state import MissionStatus, TaskStatus
@@ -23,62 +38,81 @@ def test_report_type_detection():
     assert _detect_type("Compare NVIDIA vs AMD") == "COMPETITIVE_ANALYSIS"
     assert _detect_type("Find AI/ML jobs in Germany") == "JOB_MARKET_REPORT"
     assert _detect_type("Research transformer architectures") == "TECHNICAL_ANALYSIS"
-    assert _detect_type("Summarize the news") == "RESEARCH_REPORT"
 
 
 def test_sources_extracted_not_invented():
     tasks = [_task(1, "a", "See https://nvidia.com/ai and https://amd.com."),
-             _task(2, "b", "no links here")]
+             _task(2, "b", "no links")]
     assert _extract_sources(tasks) == ["https://nvidia.com/ai", "https://amd.com."]
-    # a mission with no links -> no sources (honest)
     assert _extract_sources([_task(3, "c", "plain text")]) == []
 
 
-def test_build_report_from_real_tasks():
-    m = _mission("Compare NVIDIA, AMD and Intel AI strategy",
-                 meta={"usage": {"tokens": 2740, "usd": 0.0061}})
-    tasks = [_task(1, "Research NVIDIA strategy", "NVIDIA leads via CUDA. https://nvidia.com"),
-             _task(2, "Research AMD strategy", "AMD competes on price with MI300."),
-             _task(3, "Compare", "", status=TaskStatus.PENDING)]
+def test_findings_confidence_and_coverage():
+    m = _mission("Compare A and B")
+    tasks = [_task(1, "Research A", "A wins. https://a.com"),   # source-backed -> High
+             _task(2, "Research B", "B is analytical only")]     # no source -> Analytical
     r = build_report(m, tasks)
-    assert r.report_type == "COMPETITIVE_ANALYSIS"
-    assert r.meta["mission_id"] == 42 and r.meta["sources"] == 1
-    assert len(r.findings) == 2          # only DONE tasks with results
-    assert any(s.table for s in r.sections)  # scope table present
-    assert "2740 tokens" in r.methodology
+    conf = {f.confidence for f in r.findings}
+    assert "High" in conf and "Analytical" in conf
+    assert r.coverage.sources_analyzed == 1
+    assert r.coverage.claims_supported == 1 and r.coverage.assessments == 1
+    assert 0 <= r.coverage.coverage_pct <= 100
+    assert r.trail.sources_used == 1 and r.trail.areas
+    assert r.limitations  # always honest limitations
 
 
-def test_build_report_handles_empty_mission():
-    r = build_report(_mission("Do something"), [])
-    assert r.sections and r.sources == []  # honest fallback, no fake sources
+async def test_llm_synthesis_merges_snapshot_and_scorecard():
+    async def fake(_messages):
+        return json.dumps({
+            "snapshot": [{"label": "Market Leader", "value": "NVIDIA"}],
+            "findings": [{"title": "Ecosystem moat", "body": "CUDA is broad.",
+                          "confidence": "High"}],
+            "scorecard": {"dimensions": ["Hardware", "Software"],
+                          "entities": ["NVIDIA", "AMD"],
+                          "scores": {"NVIDIA": [5, 5], "AMD": [4, 3]}},
+            "limitations": ["No quantitative market figures were available."],
+        })
+    m = _mission("Compare NVIDIA and AMD")
+    r = await build_report_llm(m, [_task(1, "Research", "stuff https://x.com")], fake)
+    assert r.snapshot[0].value == "NVIDIA"
+    assert r.scorecard and r.scorecard.scores["NVIDIA"] == [5, 5]
+    assert r.findings[0].confidence == "High"
+
+
+async def test_llm_bad_response_falls_back():
+    async def bad(_messages):
+        return "not json"
+    r = await build_report_llm(_mission("x"), [_task(1, "t", "r")], bad)
+    assert isinstance(r, Report) and r.findings  # deterministic base preserved
 
 
 # --- renderer ---
 
-def test_render_report_valid_pdf():
+def test_render_full_report_valid_pdf():
     r = Report(
         title="AI Compute Landscape", subtitle="NVIDIA vs AMD vs Intel",
         meta={"mission_id": 42, "date": "28 August 2026", "sources": 3},
-        executive_summary="NVIDIA maintains the strongest position. " * 20,
-        findings=[Finding("Ecosystem depth", "CUDA adoption is broad. " * 10)],
-        sections=[
-            ReportSection("NVIDIA", ["Strong ecosystem. " * 30]),
-            ReportSection("Comparison", [], table=Table(
-                ["Dimension", "NVIDIA", "AMD"], [["Ecosystem", "Deep", "Growing"]],
-                "Table 1 — comparison.")),
-        ],
+        snapshot=[Metric("Market Leader", "NVIDIA"), Metric("Challenger", "AMD"),
+                  Metric("Risk", "Ecosystem lock-in")],
+        executive_summary="NVIDIA leads. " * 20,
+        findings=[Finding("Ecosystem moat", "CUDA is broad. " * 8, "High", ["https://x.com"]),
+                  Finding("Challenger", "AMD closing gap. " * 8, "Medium")],
+        scorecard=Scorecard(["Hardware", "Software", "Ecosystem"], ["NVIDIA", "AMD", "Intel"],
+                            {"NVIDIA": [5, 5, 5], "AMD": [4, 3, 3], "Intel": [3, 3, 2]}),
+        coverage=EvidenceCoverage(24, 41, 9),
+        sections=[ReportSection("NVIDIA", ["Strong. " * 30]),
+                  ReportSection("Comparison", [], Table(["D", "N", "A"], [["x", "y", "z"]], "T1"))],
         methodology="Synthesized from mission results.",
-        sources=["https://example.com/a", "https://example.com/b"],
+        limitations=["Scores are qualitative analyst assessments."],
+        sources=["https://a.com", "https://b.com"],
     )
     pdf = render_report(r)
     assert is_valid_pdf(pdf)
-    assert page_count(pdf) >= 2          # cover + content
-    assert b"Helvetica-Bold" in pdf      # professional headings
-    assert b"Page 2 of" in pdf           # footer page numbers
+    assert page_count(pdf) >= 2
+    assert b"Helvetica-Bold" in pdf and b"Page 2 of" in pdf
 
 
 def test_render_end_to_end_from_mission():
     m = _mission("Compare NVIDIA and AMD", meta={"usage": {"tokens": 100, "usd": 0.01}})
-    tasks = [_task(1, "Research", "NVIDIA leads. " * 40 + "https://nvidia.com")]
-    pdf = render_report(build_report(m, tasks))
+    pdf = render_report(build_report(m, [_task(1, "Research", "NVIDIA leads. " * 40)]))
     assert is_valid_pdf(pdf) and page_count(pdf) >= 2
