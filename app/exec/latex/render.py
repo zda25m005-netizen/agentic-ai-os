@@ -555,7 +555,9 @@ def _sources(r: Report) -> str:
     if r.source_records:
         items = ""
         for s in r.source_records:
-            items += (r"\item[{[" + str(s.ref) + r"]}] " + _href(s.url)
+            head = (r"\href{" + s.url.replace("%", r"\%").replace("#", r"\#") + "}{"
+                    + tex_escape(s.citation) + "}") if s.citation else _href(s.url)
+            items += (r"\item[{[" + str(s.ref) + r"]}] " + head
                       + r"\\{\footnotesize\color{mute}\url{" + s.url + "}}\n")
         out.append(r"\begin{description}[leftmargin=26pt,itemsep=3pt,topsep=3pt,"
                    r"font=\normalfont]" + items + r"\end{description}")

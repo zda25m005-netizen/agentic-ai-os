@@ -56,6 +56,26 @@ class ArtifactSource:
     reliability: float = 0.4
     reliability_basis: str = "heuristic: source-type prior"
     corroboration: float = 1.0   # cross-source agreement factor (refined in Phase 5)
+    authors: list[str] = field(default_factory=list)
+    year: int | None = None
+    venue: str = ""
+
+    def enrich(self, meta: dict) -> None:
+        """Attach real bibliographic metadata gathered during research."""
+        self.title = str(meta.get("title") or self.title)
+        self.authors = list(meta.get("authors") or self.authors)
+        self.year = meta.get("year") or self.year
+        self.venue = str(meta.get("venue") or self.venue)
+
+    def citation(self) -> str:
+        """A proper reference string when metadata exists, else the title/domain."""
+        title = self.title or self.publisher
+        if not self.authors:
+            return f"{title}{f' ({self.year})' if self.year else ''}."
+        lead = self.authors[0] + (" et al." if len(self.authors) > 1 else "")
+        yr = f" ({self.year})" if self.year else ""
+        ven = f" {self.venue}." if self.venue else ""
+        return f"{lead}{yr}. {title}.{ven}"
 
     @classmethod
     def from_url(cls, sid: str, url: str, title: str = "",

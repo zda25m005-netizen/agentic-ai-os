@@ -88,6 +88,13 @@ def build_analysis_artifact(mission: Mission, tasks: list[Task]) -> AnalysisArti
         next_claim += len(claims)
         art.metrics.extend(extract_metrics(strip_noise(t.result or ""), source_ids, task_entity))
 
+    # Enrich sources with real bibliographic metadata gathered during research.
+    meta_by_url = {s.get("url"): s for s in ((mission.meta or {}).get("sources") or [])
+                   if isinstance(s, dict) and s.get("url")}
+    for s in art.sources:
+        if s.url in meta_by_url:
+            s.enrich(meta_by_url[s.url])
+
     verify(art)
     art.metrics.extend(derived_comparisons(art.metrics))
     generate_findings(art)

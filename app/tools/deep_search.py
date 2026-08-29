@@ -17,6 +17,7 @@ from app.tools import wikipedia
 _UA = wikipedia._UA
 _WIKI_API = "https://en.wikipedia.org/w/api.php"
 _ARXIV_API = "http://export.arxiv.org/api/query"
+_S2_API = "https://api.semanticscholar.org/graph/v1/paper/search"
 
 
 # --- Wikipedia full extract -------------------------------------------------
@@ -71,17 +72,66 @@ async def arxiv_search(query: str, max_results: int = 3) -> list[dict]:
         return []
 
 
-# --- combined deep research -------------------------------------------------
+# --- Semantic Scholar (keyless, real papers with authors/year) --------------
 
-async def deep_research(query: str, max_results: int = 4) -> list[dict]:
-    """Wikipedia (with full extracts) + arXiv, as [{title, snippet, url, ...}]."""
+def parse_semanticscholar(data: dict, max_results: int = 6) -> list[dict]:
+    out: list[dict] = []
+    for p in (data.get("data") or [])[:max_results]:
+        title = (p.get("title") or "").strip()
+        ext = p.get("externalIds") or {}
+        if ext.get("ArXiv"):
+            url, pub = f"https://arxiv.org/abs/{ext['ArXiv']}", "arxiv.org"
+        elif ext.get("DOI"):
+            url, pub = f"https://doi.org/{ext['DOI']}", "doi.org"
+        else:
+            url, pub = (p.get("url") or ""), "semanticscholar.org"
+        if not (title and url):
+            continue
+        authors = [a.get("name", "") for a in (p.get("authors") or [])][:4]
+        out.append({"title": title, "url": url, "publisher": pub,
+                    "snippet": (p.get("abstract") or title)[:1000],
+                    "authors": authors, "year": p.get("year"),
+                    "venue": (p.get("venue") or "").strip() or None})
+    return out
+
+
+async def semantic_scholar_search(query: str, max_results: int = 6) -> list[dict]:
+    params = {"query": query, "limit": max_results,
+              "fields": "title,abstract,year,authors,externalIds,url,venue"}
+    try:
+        async with httpx.AsyncClient(timeout=20, headers={"user-agent": _UA}) as c:
+            r = await c.get(_S2_API, params=params)
+            r.raise_for_status()
+            return parse_semanticscholar(r.json(), max_results)
+    except Exception:
+        return []
+
+
+# --- combined multi-source deep research ------------------------------------
+
+async def deep_research(query: str, max_results: int = 6) -> list[dict]:
+    """Multi-source: Wikipedia extracts + Semantic Scholar + arXiv, deduped.
+
+    Returns up to ~14 rich source dicts so a single research step yields real
+    diversity (encyclopedic + peer-reviewed) instead of one Wikipedia page.
+    """
     results: list[dict] = []
+    seen: set[str] = set()
+
+    def add(items: list[dict]) -> None:
+        for it in items:
+            u = (it.get("url") or "").strip()
+            if u and u not in seen:
+                seen.add(u)
+                results.append(it)
+
+    wiki: list[dict] = []
     for hit in await wikipedia.search(query, max_results):
         extract = await wiki_extract(hit["title"])
-        results.append({
-            "title": hit["title"], "url": hit["url"],
-            "snippet": (extract or hit.get("snippet", ""))[:1200],
-            "publisher": "en.wikipedia.org",
-        })
-    results.extend(await arxiv_search(query, max_results=2))
-    return results
+        wiki.append({"title": hit["title"], "url": hit["url"],
+                     "snippet": (extract or hit.get("snippet", ""))[:1200],
+                     "publisher": "en.wikipedia.org"})
+    add(wiki)
+    add(await semantic_scholar_search(query, max_results=6))
+    add(await arxiv_search(query, max_results=4))
+    return results[:14]

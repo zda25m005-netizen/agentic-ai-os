@@ -187,10 +187,10 @@ class MultiAgentExecutor:
             {"role": "user", "content": user},
         ])).strip()
 
-    async def _research(self, query: str) -> tuple[str, list[str]]:
-        """Run web search; return (context block, real source URLs). Never raises."""
+    async def _research(self, query: str) -> tuple[str, list[str], list[dict]]:
+        """Run web search; return (context, source URLs, raw source dicts)."""
         if self._search is None:
-            return "", []
+            return "", [], []
         results = await self._search(query)
         ctx, urls = [], []
         for r in results:
@@ -199,7 +199,26 @@ class MultiAgentExecutor:
             if url and snippet:
                 ctx.append(f"- {snippet} ({url})")
                 urls.append(url)
-        return "\n".join(ctx), urls
+        return "\n".join(ctx), urls, results
+
+    async def _persist_sources(self, mission_id: int, results: list[dict]) -> None:
+        """Store gathered source metadata on the mission for rich references."""
+        if not results:
+            return
+        try:
+            fresh = await self._repo.get(mission_id)
+            meta = dict(fresh.meta or {}) if fresh else {}
+            by_url = {s.get("url"): s for s in (meta.get("sources") or []) if s.get("url")}
+            for r in results:
+                u = (r.get("url") or "").strip()
+                if u:
+                    by_url[u] = {"url": u, "title": r.get("title", ""),
+                                 "authors": r.get("authors") or [], "year": r.get("year"),
+                                 "venue": r.get("venue") or ""}
+            meta["sources"] = list(by_url.values())
+            await self._repo.update_meta(mission_id, meta)
+        except Exception:
+            pass   # telemetry must never break execution
 
     async def _record_flag(self, mission_id: int, task_id: int, note: str) -> None:
         """Persist a critic flag onto the mission meta (best-effort, race-tolerant)."""
@@ -222,7 +241,9 @@ class MultiAgentExecutor:
         # Researcher tasks gather real sources via web search before answering.
         context, urls = ("", [])
         if role == "researcher":
-            context, urls = await self._research(f"{objective} {task.description}".strip())
+            context, urls, results = await self._research(
+                f"{objective} {task.description}".strip())
+            await self._persist_sources(task.mission_id, results)
 
         output = await self._generate(role, task.description, context=context)
 

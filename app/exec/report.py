@@ -37,6 +37,7 @@ class SourceRecord:
     stype: str = ""                  # Academic | News | Government | ...
     credibility: str = ""            # High | Medium | Low (internal assessment)
     freshness: str = ""              # Recent | Current | Background | Unknown
+    citation: str = ""               # formatted reference (authors, year, title, venue)
 
 
 @dataclass

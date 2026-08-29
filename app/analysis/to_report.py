@@ -44,7 +44,7 @@ def artifact_to_report(artifact: AnalysisArtifact, *, date: str = "",
     source_records = [
         SourceRecord(ref=i + 1, url=s.url, publisher=s.publisher,
                      stype=s.source_type.title(), credibility=s.credibility,
-                     freshness=s.freshness())
+                     freshness=s.freshness(), citation=s.citation())
         for i, s in enumerate(artifact.sources)
     ]
     claim_by_id = {c.id: c for c in artifact.claims}
