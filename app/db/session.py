@@ -23,12 +23,19 @@ from app.db.base import Base
 _engine: AsyncEngine | None = None
 _sessionmaker: async_sessionmaker[AsyncSession] | None = None
 
+# Uncached (dsn-provided) engines are tracked so tests can dispose them at the
+# end of each test — otherwise their aiosqlite connections linger and raise
+# "Event loop is closed" during GC on Python 3.11 (intermittent CI failures).
+_ephemeral_engines: list[AsyncEngine] = []
+
 
 def get_engine(dsn: str | None = None) -> AsyncEngine:
     """Return an async engine. Cached when built from config (dsn=None)."""
     global _engine
     if dsn is not None:
-        return create_async_engine(dsn, future=True)
+        engine = create_async_engine(dsn, future=True)
+        _ephemeral_engines.append(engine)
+        return engine
     if _engine is None:
         _engine = create_async_engine(get_settings().database_url, future=True)
     return _engine
