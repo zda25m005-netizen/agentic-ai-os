@@ -15,7 +15,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from app.analysis.report_flow import build_report_evidence_first
 from app.core import llm
+from app.core.config import get_settings
 from app.db import session as db
 from app.exec.latex.pipeline import render_report_best
 from app.exec.report_builder import build_report, build_report_llm
@@ -151,13 +153,24 @@ async def mission_report_pdf(
 ) -> Response:
     """Generate and download a professional analytical report PDF for the mission.
 
-    Uses LLM synthesis (snapshot, findings, scorecard) when configured; falls back
-    to a deterministic, source-honest report otherwise.
+    Default: the evidence-first flow — build a structured Analysis Artifact and let
+    the LLM only synthesise prose over it. Falls back to the legacy LLM-authored /
+    deterministic report when disabled or when the artifact is too thin to ground
+    findings.
     """
     mission = await _load_or_404(repo, mission_id)
     tasks = await repo.get_tasks(mission_id)
-    report = await build_report_llm(mission, tasks, llm.chat) if llm.is_configured() \
-        else build_report(mission, tasks)
+    chat = llm.chat if llm.is_configured() else None
+
+    report = None
+    if get_settings().report_evidence_first:
+        report = await build_report_evidence_first(mission, tasks, chat)
+        if not report.findings:      # thin input -> legacy path still produces content
+            report = None
+    if report is None:
+        report = await build_report_llm(mission, tasks, llm.chat) if llm.is_configured() \
+            else build_report(mission, tasks)
+
     pdf, engine = render_report_best(report)
     return Response(
         content=pdf, media_type="application/pdf",

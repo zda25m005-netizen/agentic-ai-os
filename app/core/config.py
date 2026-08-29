@@ -70,6 +70,10 @@ class Settings(BaseSettings):
     research_enabled: bool = Field(default=False)
     research_max_results: int = Field(default=4)
 
+    # Evidence-first report flow: build a structured Analysis Artifact and let the
+    # LLM only synthesise prose over it (vs. the legacy LLM-authored report).
+    report_evidence_first: bool = Field(default=True)
+
 
 @lru_cache
 def get_settings() -> Settings:
