@@ -38,7 +38,7 @@ async def run_python(code: str, timeout: float = DEFAULT_TIMEOUT) -> ExecResult:
     )
     try:
         out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-    except TimeoutError:
+    except (TimeoutError, asyncio.TimeoutError):  # noqa: UP041  (3.10 alias differs)
         proc.kill()
         await proc.wait()
         return ExecResult(False, "", f"timeout after {timeout}s", -1)
