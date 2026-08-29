@@ -28,7 +28,7 @@ _URL_RE = re.compile(r"https?://\S+")
 
 def _prose(text: str) -> str:
     """Inline body text: bare URLs removed, inline Markdown flattened to clean text."""
-    s = _URL_RE.sub("", text or "")
+    s = md.to_ascii_art(_URL_RE.sub("", text or ""))   # box-drawing -> ASCII
     s = md.inline_to_plain(s)          # **bold**/`code`/[t](u) -> plain, structurally
     s = re.sub(r"\s+([.,;:])", r"\1", s)
     return re.sub(r"\s{2,}", " ", s).strip()
@@ -483,7 +483,7 @@ def _render_blocks(c: _Canvas, blocks) -> None:
             c.y += 4
         elif isinstance(b, md.Code):
             for ln in b.text.split("\n"):
-                c.para(ln or " ", 9, gap=0, color=_MUTE)
+                c.para(md.to_ascii_art(ln) or " ", 9, gap=0, color=_MUTE)
             c.y += 4
         elif isinstance(b, md.Table):
             _table(c, Table(b.header, b.rows, ""))
@@ -564,11 +564,58 @@ def _body(c: _Canvas, r: Report) -> None:
         _heatmap(c, r.scorecard)
         _radar(c, r.scorecard)
 
+    if r.evidence_summary:
+        _section_title(c, n, "Evidence Summary")
+        n += 1
+        rows = [[d.get("finding", ""), d.get("strength", ""), d.get("confidence", "")]
+                for d in r.evidence_summary]
+        _table(c, Table(["Finding", "Evidence strength", "Confidence"], rows, ""))
+
+    if r.key_insights:
+        _section_title(c, n, "Key Insights")
+        n += 1
+        for k in r.key_insights:
+            conf = str(k.get("confidence", "")).strip()
+            suffix = f"  ({conf})" if conf else ""
+            _bullet(c, "-", _prose(str(k.get("insight", ""))) + suffix)
+        c.y += 4
+
+    if r.scoring_rationale:
+        _section_title(c, n, "Scoring Methodology")
+        n += 1
+        c.para("Analyst-derived 0-5 scores from the gathered evidence (0 unsuitable, "
+               "3 moderate, 5 very strong) - not benchmark measurements.", 9, color=_MUTE)
+        rows = [[d.get("criterion", ""), d.get("reason", ""), d.get("confidence", "")]
+                for d in r.scoring_rationale]
+        _table(c, Table(["Criterion", "Rationale", "Confidence"], rows, ""))
+
+    if r.trade_offs:
+        _section_title(c, n, "Trade-off Analysis")
+        n += 1
+        for t in r.trade_offs:
+            c.text(_L, c.y + 10, 10.5, str(t.get("entity", "")), bold=True, color=_ACCENT)
+            c.y += 16
+            for lab, key in (("Strengths", "pros"), ("Weaknesses", "cons")):
+                items = t.get(key) or []
+                if items:
+                    c.text(_L, c.y + 9, 9.5, lab, bold=True, color=_MUTE)
+                    c.y += 13
+                    for it in items:
+                        _bullet(c, "-", _prose(str(it)))
+            c.y += 4
+
     if r.failure_analysis:
         _section_title(c, n, "Failure Mode Analysis")
         n += 1
-        has_prob = any(d.get("probability") for d in r.failure_analysis)
-        if has_prob:
+        rich = any(d.get("mechanism") or d.get("detection") or d.get("residual_risk")
+                   for d in r.failure_analysis)
+        if rich:
+            cols = ["Failure", "Mechanism", "Prob.", "Impact", "Detection", "Mitigation",
+                    "Residual"]
+            rows = [[d.get("failure", ""), d.get("mechanism", ""), d.get("probability", ""),
+                     d.get("impact", ""), d.get("detection", ""), d.get("mitigation", ""),
+                     d.get("residual_risk", "")] for d in r.failure_analysis]
+        elif any(d.get("probability") for d in r.failure_analysis):
             cols = ["Failure", "Probability", "Impact", "Mitigation"]
             rows = [[d.get("failure", ""), d.get("probability", ""), d.get("impact", ""),
                      d.get("mitigation", "")] for d in r.failure_analysis]
@@ -577,6 +624,20 @@ def _body(c: _Canvas, r: Report) -> None:
             rows = [[d.get("failure", ""), d.get("impact", ""), d.get("mitigation", "")]
                     for d in r.failure_analysis]
         _table(c, Table(cols, rows, ""))
+
+    if r.reasoning_chains:
+        _section_title(c, n, "Decision Reasoning")
+        n += 1
+        for ch in r.reasoning_chains:
+            for lab, key in (("Claim", "claim"), ("Evidence", "evidence"),
+                             ("Reasoning", "reasoning"), ("Trade-off", "trade_off"),
+                             ("Counter-evidence", "counter"), ("Decision", "decision")):
+                v = _prose(ch.get(key, ""))
+                if v:
+                    c.ensure(14)
+                    c.text(_L, c.y + 10, 9.5, f"{lab}.", bold=True, color=_ACCENT)
+                    _bullet(c, "", v, indent=52)
+            c.y += 6
 
     if r.recommendation or r.decision_rationale:
         _section_title(c, n, "Recommendation")
@@ -588,6 +649,13 @@ def _body(c: _Canvas, r: Report) -> None:
                     for d in r.decision_rationale]
             _table(c, Table(["Requirement", "Decision", "Reason"], rows,
                             "Decision rationale — requirement to design decision."))
+
+    if r.decision_change:
+        _section_title(c, n, "What Would Change This Recommendation")
+        n += 1
+        for x in r.decision_change:
+            _bullet(c, "-", _prose(str(x)))
+        c.y += 4
 
     # Structured per-approach analysis replaces the generic task-result sections.
     for sec in ([] if r.approaches else r.sections):

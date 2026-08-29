@@ -369,23 +369,117 @@ def _comparative(r: Report) -> str:
 def _failure_analysis(r: Report) -> str:
     if not r.failure_analysis:
         return ""
-    has_prob = any(d.get("probability") for d in r.failure_analysis)
+    fa = r.failure_analysis
+    rich = any(d.get("mechanism") or d.get("detection") or d.get("residual_risk") for d in fa)
+    if rich:
+        # Failure | Mechanism | P | I | Detection | Mitigation | Residual
+        p = r">{\RaggedRight\arraybackslash}p"
+        spec = (r"L L " + p + r"{12mm} " + p + r"{12mm} L L " + p + r"{12mm}")
+        head = (r"\sffamily\bfseries Failure & \sffamily\bfseries Mechanism & "
+                r"\sffamily\bfseries Prob. & \sffamily\bfseries Impact & "
+                r"\sffamily\bfseries Detection & \sffamily\bfseries Mitigation & "
+                r"\sffamily\bfseries Residual")
+        rows = "".join(
+            _il(d.get("failure", "")) + " & " + _il(d.get("mechanism", "")) + " & "
+            + _il(d.get("probability", "")) + " & " + _il(d.get("impact", "")) + " & "
+            + _il(d.get("detection", "")) + " & " + _il(d.get("mitigation", "")) + " & "
+            + _il(d.get("residual_risk", "")) + r" \\" + "\n" for d in fa)
+        return (r"\section{Failure Mode Analysis}\scriptsize"
+                r"\begin{tabularx}{\linewidth}{@{}" + spec + r"@{}}\toprule "
+                + head + r" \\\midrule " + rows + r"\bottomrule\end{tabularx}\normalsize")
+    has_prob = any(d.get("probability") for d in fa)
     rows = ""
-    for d in r.failure_analysis:
+    for d in fa:
         prob = (_il(d.get("probability", "")) + " & ") if has_prob else ""
         rows += (_il(d.get("failure", "")) + " & " + prob + _il(d.get("impact", "")) + " & "
                  + _il(d.get("mitigation", "")) + r" \\" + "\n")
-    if has_prob:
-        spec = r"L >{\RaggedRight\arraybackslash}p{22mm} >{\RaggedRight\arraybackslash}p{22mm} L"
-        head = (r"\sffamily\bfseries Failure & \sffamily\bfseries Probability & "
-                r"\sffamily\bfseries Impact & \sffamily\bfseries Mitigation")
-    else:
-        spec = r"L L L"
-        head = (r"\sffamily\bfseries Failure & \sffamily\bfseries Impact & "
-                r"\sffamily\bfseries Mitigation")
+    spec = (r"L >{\RaggedRight\arraybackslash}p{22mm} >{\RaggedRight\arraybackslash}p{22mm} L"
+            if has_prob else r"L L L")
+    head = (r"\sffamily\bfseries Failure & \sffamily\bfseries Probability & "
+            r"\sffamily\bfseries Impact & \sffamily\bfseries Mitigation") if has_prob else (
+        r"\sffamily\bfseries Failure & \sffamily\bfseries Impact & "
+        r"\sffamily\bfseries Mitigation")
     return (r"\section{Failure Mode Analysis}"
             r"\small\begin{tabularx}{\linewidth}{@{}" + spec + r"@{}}\toprule "
             + head + r" \\\midrule " + rows + r"\bottomrule\end{tabularx}\normalsize")
+
+
+def _key_insights(r: Report) -> str:
+    if not r.key_insights:
+        return ""
+    items = ""
+    for k in r.key_insights:
+        conf = str(k.get("confidence", "")).strip()
+        tag = (r"~{\footnotesize\color{mute}(" + _il(conf) + r")}") if conf else ""
+        items += r"\item " + _il(str(k.get("insight", ""))) + tag
+    return (r"\section{Key Insights}"
+            r"\begin{enumerate}[leftmargin=16pt,itemsep=3pt,topsep=3pt]" + items
+            + r"\end{enumerate}")
+
+
+def _evidence_summary(r: Report) -> str:
+    if not r.evidence_summary:
+        return ""
+    rows = "".join(
+        _il(str(d.get("finding", ""))) + " & " + _il(str(d.get("strength", ""))) + " & "
+        + _il(str(d.get("confidence", ""))) + r" \\" + "\n" for d in r.evidence_summary)
+    return (r"\section{Evidence Summary}\small"
+            r"\begin{tabularx}{\linewidth}{@{}L >{\RaggedRight\arraybackslash}p{26mm} "
+            r">{\RaggedRight\arraybackslash}p{22mm}@{}}\toprule "
+            r"\sffamily\bfseries Finding & \sffamily\bfseries Evidence strength & "
+            r"\sffamily\bfseries Confidence \\\midrule " + rows
+            + r"\bottomrule\end{tabularx}\normalsize")
+
+
+def _trade_offs(r: Report) -> str:
+    if not r.trade_offs:
+        return ""
+    out = [r"\section{Trade-off Analysis}"]
+    for t in r.trade_offs:
+        out.append(r"\subsection*{" + tex_escape(str(t.get("entity", ""))) + "}")
+        out.append(_bullets("Strengths", t.get("pros", []) if isinstance(t.get("pros"), list) else []))
+        out.append(_bullets("Weaknesses", t.get("cons", []) if isinstance(t.get("cons"), list) else []))
+    return "\n\n".join(p for p in out if p)
+
+
+def _scoring_methodology(r: Report) -> str:
+    if not r.scoring_rationale:
+        return ""
+    rows = "".join(
+        _il(str(d.get("criterion", ""))) + " & " + _il(str(d.get("reason", ""))) + " & "
+        + _il(str(d.get("confidence", ""))) + r" \\" + "\n" for d in r.scoring_rationale)
+    return (r"\section{Scoring Methodology}"
+            r"{\footnotesize\color{mute}Scores are analyst-derived on a 0--5 scale from the "
+            r"gathered evidence (0 unsuitable, 3 moderate, 5 very strong) --- not benchmark "
+            r"measurements.}\par\vspace{3pt}\small"
+            r"\begin{tabularx}{\linewidth}{@{}>{\RaggedRight\arraybackslash}p{30mm} L "
+            r">{\RaggedRight\arraybackslash}p{20mm}@{}}\toprule "
+            r"\sffamily\bfseries Criterion & \sffamily\bfseries Rationale & "
+            r"\sffamily\bfseries Confidence \\\midrule " + rows
+            + r"\bottomrule\end{tabularx}\normalsize")
+
+
+def _decision_change(r: Report) -> str:
+    if not r.decision_change:
+        return ""
+    items = "".join(r"\item " + _il(x) for x in r.decision_change)
+    return (r"\section{What Would Change This Recommendation}"
+            r"\begin{itemize}[leftmargin=14pt,itemsep=3pt,topsep=3pt]" + items + r"\end{itemize}")
+
+
+def _reasoning_chains(r: Report) -> str:
+    if not r.reasoning_chains:
+        return ""
+    out = [r"\section{Decision Reasoning}"]
+    labels = [("Claim", "claim"), ("Evidence", "evidence"), ("Reasoning", "reasoning"),
+              ("Trade-off", "trade_off"), ("Counter-evidence", "counter"),
+              ("Decision", "decision")]
+    for ch in r.reasoning_chains:
+        parts = [r"{\sffamily\bfseries\color{steel}" + lab + r".} " + _il(ch.get(key, ""))
+                 for lab, key in labels if ch.get(key, "").strip()]
+        out.append(r"\begin{findingcard}" + r"\par\vspace{3pt}".join(parts)
+                   + r"\end{findingcard}\vspace{5pt}")
+    return "\n\n".join(out)
 
 
 def _recommendation(r: Report) -> str:
@@ -508,11 +602,17 @@ def render_tex(report: Report, chart_keys: set[str] | None = None) -> str:
         # same ground — avoids defining each option twice.
         _findings(report) if not report.approaches else "",
         _approaches(report),
+        _evidence_summary(report),
         _comparative(report),
+        _key_insights(report),
         _scorecard(report.scorecard) if report.scorecard else "",
+        _scoring_methodology(report),
         _visual(chart_keys),
+        _trade_offs(report),
         _failure_analysis(report),
+        _reasoning_chains(report),
         _recommendation(report),
+        _decision_change(report),
         detailed,
         _strategic(report),      # rendered as "Key Takeaways"
         _closing(report),        # limitations only (no methodology)

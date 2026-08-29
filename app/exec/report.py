@@ -95,7 +95,15 @@ class Report:
     findings: list[Finding] = field(default_factory=list)
     approaches: list[dict] = field(default_factory=list)   # per-option deep dive
     comparative_analysis: str = ""                  # narrative across dimensions
-    failure_analysis: list[dict] = field(default_factory=list)  # failure/impact/mitigation
+    # claim / evidence / reasoning / trade_off / decision / counter
+    reasoning_chains: list[dict] = field(default_factory=list)
+    key_insights: list[dict] = field(default_factory=list)       # {insight, confidence}
+    evidence_summary: list[dict] = field(default_factory=list)   # {finding, strength, confidence}
+    trade_offs: list[dict] = field(default_factory=list)         # {entity, pros[], cons[]}
+    scoring_rationale: list[dict] = field(default_factory=list)  # {criterion, reason, confidence}
+    decision_change: list[str] = field(default_factory=list)     # what would change the decision
+    # failure/mechanism/probability/impact/detection/mitigation/residual_risk
+    failure_analysis: list[dict] = field(default_factory=list)
     scorecard: Scorecard | None = None
     coverage: EvidenceCoverage | None = None
     trail: ResearchTrail | None = None

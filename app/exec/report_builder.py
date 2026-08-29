@@ -384,9 +384,10 @@ def _synthesize_into(report: Report, data: dict) -> None:
         report.comparative_analysis = ca.strip()
     fa = data.get("failure_analysis")
     if isinstance(fa, list) and fa:
+        _fkeys = ("failure", "mechanism", "probability", "impact", "detection",
+                  "mitigation", "residual_risk")
         report.failure_analysis = [
-            {"failure": str(d.get("failure", "")), "probability": str(d.get("probability", "")),
-             "impact": str(d.get("impact", "")), "mitigation": str(d.get("mitigation", ""))}
+            {k: str(d.get(k, "")) for k in _fkeys}
             for d in fa if isinstance(d, dict) and d.get("failure")][:10]
     rec = data.get("recommendation")
     if isinstance(rec, str) and rec.strip():

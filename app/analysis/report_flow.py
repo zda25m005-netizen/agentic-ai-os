@@ -34,15 +34,31 @@ _SYS_SYNTH = (
     "definition of a technology). "
     "executive_summary, problem_definition, comparative_analysis (each a string). "
     "recommendation: a decisive paragraph AND, for design/architecture questions, a "
-    "component pipeline inside a ```code fence``` using ONLY plain ASCII characters "
-    "(-> | + and words; NO unicode box-drawing), plus the decision boundary — "
-    "explicitly answer what belongs in each component and why NOT put everything in "
-    "one mechanism. Do not re-define each technology; the approaches section does that. "
+    "multi-line component ARCHITECTURE DIAGRAM inside a ```code fence``` using ONLY "
+    "plain ASCII (-> | + _ and words; NO unicode box-drawing), showing each memory/"
+    "component layer and the data flow, plus a short explanation of what goes into "
+    "each layer and why NOT put everything in one mechanism. "
+    "reasoning_chains: a list of {claim, evidence, reasoning, trade_off, decision} — "
+    "for each major design decision, give the Claim, the Evidence it rests on, the "
+    "technical Reasoning, the Trade-off, and the Decision. This justifies the "
+    "scorecard; do not assign a score without a supporting reasoning chain. "
     "reasoning: a list of {finding_id, interpretation, implication}. "
     "evaluation_framework: a list of {criterion, definition}. "
     "approaches: a list of {name, how_it_works, advantages[], disadvantages[], "
     "failure_modes[], mitigations[]}, one per entity, using the real entity names. "
-    "failure_analysis: a risk register of {failure, probability, impact, mitigation}. "
+    "failure_analysis: a risk register of {failure, mechanism, probability, impact, "
+    "detection, mitigation, residual_risk}. "
+    "key_insights: 3-6 high-value {insight, confidence} items, each a non-obvious "
+    "evidence-backed takeaway. "
+    "evidence_summary: a list of {finding, strength (Strong/Moderate/Weak), "
+    "confidence (High/Medium/Low)}. "
+    "trade_offs: a list of {entity, pros (list), cons (list)}, one per option. "
+    "scoring_rationale: for each scorecard criterion, {criterion, reason, confidence} "
+    "explaining HOW the 0-5 scores were derived from the evidence. "
+    "decision_change: 2-4 strings answering 'what evidence would change this "
+    "recommendation?'. "
+    "For every major claim also give counter_evidence in the reasoning chain (a "
+    "'counter' field) so the analysis is not one-sided; if none exists, say so. "
     "scorecard: {dimensions[], entities[], scores{entity:[0-5 per dimension]}} — the "
     "0-5 scores are a QUALITATIVE analyst assessment of the evidence, never a "
     "measured statistic. decision_rationale: a list of {requirement, decision, reason}. "
@@ -111,6 +127,33 @@ async def build_report_evidence_first(
         or _default_summary(mission.objective, len(art.findings))
     report.problem_definition = (synth.get("problem_definition") or "").strip()
     report.bottom_line = (synth.get("bottom_line") or "").strip()
+    chains = synth.get("reasoning_chains")
+    if isinstance(chains, list):
+        report.reasoning_chains = [
+            {k: str(c.get(k, "")) for k in ("claim", "evidence", "reasoning",
+                                            "trade_off", "counter", "decision")}
+            for c in chains if isinstance(c, dict) and c.get("claim")][:8]
+
+    def _dicts(key: str, fields: tuple[str, ...], req: str, limit: int = 8) -> list[dict]:
+        v = synth.get(key)
+        if not isinstance(v, list):
+            return []
+        out = []
+        for d in v:
+            if isinstance(d, dict) and d.get(req):
+                out.append({f: (d.get(f) if isinstance(d.get(f), list) else str(d.get(f, "")))
+                            for f in fields})
+        return out[:limit]
+
+    report.key_insights = _dicts("key_insights", ("insight", "confidence"), "insight", 6)
+    report.evidence_summary = _dicts(
+        "evidence_summary", ("finding", "strength", "confidence"), "finding")
+    report.trade_offs = _dicts("trade_offs", ("entity", "pros", "cons"), "entity", 5)
+    report.scoring_rationale = _dicts(
+        "scoring_rationale", ("criterion", "reason", "confidence"), "criterion")
+    dc = synth.get("decision_change")
+    if isinstance(dc, list):
+        report.decision_change = [str(x) for x in dc if str(x).strip()][:5]
 
     repair_report(report)
     return report
