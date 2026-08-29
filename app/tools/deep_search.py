@@ -109,12 +109,39 @@ async def semantic_scholar_search(query: str, max_results: int = 6) -> list[dict
 
 # --- combined multi-source deep research ------------------------------------
 
+_STOP = {"evaluate", "compare", "comparison", "analyse", "analyze", "assess", "review",
+         "research", "examine", "recommend", "design", "approaches", "approach", "three",
+         "the", "a", "an", "and", "or", "for", "of", "to", "in", "on", "with", "that",
+         "must", "should", "across", "using", "based", "system", "give", "giving"}
+
+
+def clean_query(query: str, max_terms: int = 8) -> str:
+    """Turn a long objective into a focused keyword query for search providers.
+
+    Long, verbose queries make Wikipedia return generic glossary pages and give
+    arXiv/Semantic Scholar nothing to match; a short salient-term query works far
+    better. Content after a colon (explicit option lists) is preferred.
+    """
+    q = query.split(":", 1)[-1] if ":" in query else query
+    terms, seen = [], set()
+    for w in re.findall(r"[A-Za-z][A-Za-z0-9+/()-]{2,}", q):
+        low = w.lower()
+        if low in _STOP or low in seen:
+            continue
+        seen.add(low)
+        terms.append(w)
+        if len(terms) >= max_terms:
+            break
+    return " ".join(terms) or query[:80]
+
+
 async def deep_research(query: str, max_results: int = 6) -> list[dict]:
     """Multi-source: Wikipedia extracts + Semantic Scholar + arXiv, deduped.
 
     Returns up to ~14 rich source dicts so a single research step yields real
     diversity (encyclopedic + peer-reviewed) instead of one Wikipedia page.
     """
+    q = clean_query(query)
     results: list[dict] = []
     seen: set[str] = set()
 
@@ -126,12 +153,12 @@ async def deep_research(query: str, max_results: int = 6) -> list[dict]:
                 results.append(it)
 
     wiki: list[dict] = []
-    for hit in await wikipedia.search(query, max_results):
+    for hit in await wikipedia.search(q, max_results):
         extract = await wiki_extract(hit["title"])
         wiki.append({"title": hit["title"], "url": hit["url"],
                      "snippet": (extract or hit.get("snippet", ""))[:1200],
                      "publisher": "en.wikipedia.org"})
     add(wiki)
-    add(await semantic_scholar_search(query, max_results=6))
-    add(await arxiv_search(query, max_results=4))
+    add(await semantic_scholar_search(q, max_results=6))
+    add(await arxiv_search(q, max_results=4))
     return results[:14]

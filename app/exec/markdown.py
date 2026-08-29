@@ -165,6 +165,22 @@ def inline_to_latex(text: str, esc) -> str:
     return "".join(out)
 
 
+_ASCII_ART = {ord(k): v for k, v in {
+    "│": "|", "┃": "|", "║": "|", "┆": "|", "┇": "|",
+    "─": "-", "━": "-", "┄": "-", "═": "-",
+    "┌": "+", "┐": "+", "└": "+", "┘": "+", "├": "+", "┤": "+", "┬": "+", "┴": "+",
+    "┼": "+", "╔": "+", "╗": "+", "╚": "+", "╝": "+", "╠": "+", "╣": "+",
+    "▼": "v", "▽": "v", "▲": "^", "△": "^", "◄": "<", "►": ">", "◆": "*", "■": "*",
+    "↓": "v", "↑": "^", "→": "->", "←": "<-", "⟶": "->", "⇒": "=>", "⟵": "<-",
+    "•": "-", "·": "-", "●": "*", "○": "o", "”": '"', "“": '"', "’": "'", "‘": "'",
+}.items()}
+
+
+def to_ascii_art(text: str) -> str:
+    """Map unicode box-drawing / arrows to ASCII so diagrams render in any engine."""
+    return (text or "").translate(_ASCII_ART)
+
+
 def inline_to_plain(text: str) -> str:
     """Strip inline Markdown to clean text (for the raw-PDF fallback canvas)."""
     # code/bold/italic keep inner text; links keep link text
@@ -193,8 +209,11 @@ def to_latex(blocks: list[Block], esc, table_fn=None) -> str:
             parts.append(f"\\begin{{{env}}}[leftmargin=15pt,itemsep=2pt,topsep=3pt]"
                          + items + f"\\end{{{env}}}")
         elif isinstance(b, Code):
-            lines = "\\\\\n".join(esc(ln) for ln in b.text.split("\n"))
-            parts.append(r"\begin{quote}\ttfamily\footnotesize " + lines + r"\end{quote}")
+            # preserve alignment: escape, non-collapsing spaces, tight single breaks
+            lines = "\\\\\n".join(esc(ln).replace(" ", "~") or "~"
+                                  for ln in b.text.split("\n"))
+            parts.append(r"\begingroup\setlength{\parskip}{0pt}\ttfamily\footnotesize "
+                         r"\noindent " + lines + r"\par\endgroup")
         elif isinstance(b, Table) and table_fn is not None:
             parts.append(table_fn(b.header, b.rows))
     return "\n\n".join(p for p in parts if p)

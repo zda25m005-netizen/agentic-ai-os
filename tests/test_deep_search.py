@@ -32,6 +32,15 @@ def test_parse_arxiv_respects_limit_and_handles_empty():
     assert parse_arxiv("", 3) == []
 
 
+def test_clean_query_focuses_keywords():
+    from app.tools.deep_search import clean_query
+    q = clean_query("Evaluate three approaches to giving LLM agents long-term memory: "
+                    "vector retrieval/RAG, fine-tuning, and structured memory stores.")
+    assert "RAG" in q and "fine-tuning" in q and "structured" in q
+    assert "evaluate" not in q.lower() and "three" not in q.lower()  # filler dropped
+    assert len(q.split()) <= 8
+
+
 def test_parse_semanticscholar_real_papers_with_authors():
     from app.tools.deep_search import parse_semanticscholar
     data = {"data": [

@@ -31,7 +31,8 @@ _SPECIALS = re.compile("|".join(re.escape(k) for k in _MAP))
 
 def tex_escape(text: str | None) -> str:
     """Escape a plain string for safe use in LaTeX text mode."""
-    s = str(text if text is not None else "")
+    from app.exec.markdown import to_ascii_art
+    s = to_ascii_art(str(text if text is not None else ""))  # box-drawing -> ASCII
     s = _SPECIALS.sub(lambda m: _MAP[m.group()], s)
     # Normalize characters that break inputenc/PDF strings.
     s = s.replace("–", "--").replace("—", "---")
