@@ -34,8 +34,9 @@ def _artifact() -> AnalysisArtifact:
 def test_source_typing_and_reliability():
     a = _artifact()
     s = a.source_by_id("S1")
-    assert s.source_type == "academic" and s.reliability >= 0.9
-    assert "heuristic" in s.reliability_basis           # never fake precision
+    # academic authority is high but reliability is modulated by recency/specificity
+    assert s.source_type == "academic" and 0.6 <= s.reliability <= 1.0
+    assert "authority" in s.reliability_basis           # transparent factor basis
     assert a.source_by_id("S2").source_type in {"company", "news", "other"}
 
 

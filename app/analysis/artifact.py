@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
 
+from app.analysis.reliability import derive_published, score_source
 from app.exec.evidence import (
     assess_credibility,
     assess_freshness,
@@ -41,18 +42,6 @@ class Verification(str, Enum):  # noqa: UP042
     UNVERIFIED = "Unverified"             # no source
 
 
-# Transparent, configurable reliability priors by source type (0..1, heuristic).
-RELIABILITY: dict[str, float] = {
-    "government": 0.95,
-    "academic": 0.95,
-    "primary": 0.90,
-    "industry": 0.80,
-    "news": 0.75,
-    "company": 0.70,
-    "other": 0.40,
-}
-
-
 @dataclass
 class ArtifactSource:
     """A source with transparent, heuristic reliability (never fake precision)."""
@@ -66,18 +55,27 @@ class ArtifactSource:
     source_type: str = "other"
     reliability: float = 0.4
     reliability_basis: str = "heuristic: source-type prior"
+    corroboration: float = 1.0   # cross-source agreement factor (refined in Phase 5)
 
     @classmethod
     def from_url(cls, sid: str, url: str, title: str = "",
                  published: str | None = None) -> ArtifactSource:
         st = source_type_from_url(url)
         dom = (url.split("//")[-1].split("/")[0]) if "//" in url else url
+        published = published or derive_published(url)
+        fresh = assess_freshness(published)
+        reliability, basis = score_source(st.value, fresh, url)
         return cls(
             id=sid, url=url, title=title or dom, publisher=dom.removeprefix("www."),
             published=published, retrieved=datetime.now(UTC).strftime("%Y-%m-%d"),
-            source_type=st.value, reliability=RELIABILITY.get(st.value, 0.4),
-            reliability_basis=f"heuristic: {st.value}-source prior",
+            source_type=st.value, reliability=reliability, reliability_basis=basis,
         )
+
+    def rescore(self, corroboration: float) -> None:
+        """Recompute reliability once cross-source corroboration is known (Phase 5)."""
+        self.corroboration = corroboration
+        self.reliability, self.reliability_basis = score_source(
+            self.source_type, self.freshness(), self.url, corroboration)
 
     @property
     def credibility(self) -> str:
