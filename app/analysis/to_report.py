@@ -66,7 +66,7 @@ def artifact_to_report(artifact: AnalysisArtifact, *, date: str = "",
         cols = ["Dimension", *ents]
         rows = [[cmp.dimension] + [cmp.entities.get(e, {}).get("assessment", "-")[:140]
                                    for e in ents] for cmp in artifact.comparisons]
-        sections.append(ReportSection("Comparative Analysis", [], table=Table(
+        sections.append(ReportSection("Comparison Matrix", [], table=Table(
             cols, rows, "Qualitative, evidence-linked comparison (each cell traces to claims).")))
 
     if artifact.metrics:

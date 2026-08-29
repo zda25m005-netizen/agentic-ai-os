@@ -41,7 +41,7 @@ def test_comparison_and_quant_sections_present():
     art.metrics.append(Metric("latency", 120, "ms", "RAG", ["S1"], "reported"))
     r = artifact_to_report(art)
     headings = {s.heading for s in r.sections}
-    assert "Comparative Analysis" in headings
+    assert "Comparison Matrix" in headings
     assert "Quantitative Analysis" in headings
     quant = next(s for s in r.sections if s.heading == "Quantitative Analysis")
     assert quant.table and "Basis" in quant.table.columns

@@ -22,19 +22,21 @@ from app.missions.executor import TaskExecutor, chat_executor
 from app.missions.models import Task
 from app.missions.repository import MissionRepository
 from app.tools import wikipedia
+from app.tools.deep_search import deep_research
 
 ChatFn = Callable[[list[dict]], Awaitable[str]]
 SearchFn = Callable[[str], Awaitable[list[dict]]]
 
 
 async def default_search(query: str, max_results: int = 4) -> list[dict]:
-    """Keyless live search via Wikipedia; [] on any failure (never raises).
+    """Keyless deep research: full Wikipedia extracts + arXiv papers.
 
-    Wikipedia's search API returns real, citable articles with real URLs — unlike
-    the DuckDuckGo instant-answer endpoint, which returns nothing for analytical
-    queries. Swap in a Tavily/Brave-backed `search_fn` for broader web coverage.
+    Fetches paragraph-length article content (not one-line snippets) and adds real
+    arXiv papers so the researcher has substantial, citable evidence — all free and
+    keyless. Falls back to plain Wikipedia search if the richer path yields nothing.
     """
-    return await wikipedia.search(query, max_results=max_results)
+    results = await deep_research(query, max_results=max_results)
+    return results or await wikipedia.search(query, max_results=max_results)
 
 ROLE_PROMPTS: dict[str, str] = {
     "researcher": (

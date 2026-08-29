@@ -49,7 +49,7 @@ async def test_llm_synthesis_only_adds_prose_over_findings():
         })
 
     r = await build_report_evidence_first(_mission(), _TASKS, chat_fn=fake_chat)
-    assert "research writer" in captured["system"].lower()
+    assert "research analyst" in captured["system"].lower()
     assert r.executive_summary.startswith("RAG suits fresh")
     assert r.recommendation.startswith("Use RAG")
     # the interpretation/implication were merged into the grounded finding body
