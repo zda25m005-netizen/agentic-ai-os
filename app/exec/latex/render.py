@@ -151,14 +151,13 @@ def _exec_summary(r: Report) -> str:
     out = [r"\section{Executive Summary}"]
     if r.executive_summary:
         out.append(md.inline_to_latex(md.strip_bare_urls(r.executive_summary), tex_escape))
-    # Bottom line callout — first substantive finding, else summary lead.
-    bl = ""
-    if r.findings:
-        bl = r.findings[0].body.strip()
-    bl = bl or r.executive_summary
-    bl = md.inline_to_plain(_URL_RE.sub("", bl)).strip()
+    # Bottom line callout — a real conclusion (analyst) when provided.
+    bl = md.inline_to_plain(_URL_RE.sub("", r.bottom_line)).strip()
+    if not bl:
+        src = r.executive_summary or (r.findings[0].body if r.findings else "")
+        src = md.inline_to_plain(_URL_RE.sub("", src)).strip()
+        bl = (src.split(". ")[0].rstrip(".") + ".") if src else ""
     if bl:
-        bl = bl.split(". ")[0].rstrip(".") + "."
         out.append(r"\vspace{4pt}\begin{bottomline}"
                    r"{\sffamily\bfseries\footnotesize BOTTOM LINE}\par\vspace{3pt}"
                    + tex_escape(bl[:400]) + r"\end{bottomline}")
@@ -394,7 +393,9 @@ def _recommendation(r: Report) -> str:
         return ""
     out = [r"\section{Recommendation}"]
     if r.recommendation:
-        out.append(md.inline_to_latex(md.strip_bare_urls(r.recommendation), tex_escape))
+        # block parse so an ASCII architecture pipeline in a code fence renders
+        out.append(md.to_latex(md.parse(md.strip_bare_urls(r.recommendation)),
+                               tex_escape, table_fn=_md_table))
     if r.decision_rationale:
         rows = ""
         for d in r.decision_rationale:
@@ -503,7 +504,9 @@ def render_tex(report: Report, chart_keys: set[str] | None = None) -> str:
         _exec_summary(report),
         _problem(report),
         _framework(report),
-        _findings(report),
+        # Skip the standalone Key Findings when per-approach sections cover the
+        # same ground — avoids defining each option twice.
+        _findings(report) if not report.approaches else "",
         _approaches(report),
         _comparative(report),
         _scorecard(report.scorecard) if report.scorecard else "",

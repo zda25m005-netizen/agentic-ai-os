@@ -30,8 +30,14 @@ _SYS_SYNTH = (
     "You are a senior research analyst. You are given a STRUCTURED analysis as JSON "
     "(sources, verified claims, findings). Organise and EXPLAIN this evidence in a "
     "professional report. Return ONLY a JSON object with these keys: "
-    "executive_summary, problem_definition, comparative_analysis, recommendation "
-    "(each a string; for design questions include the component pipeline in words). "
+    "bottom_line: ONE decisive 1-2 sentence analyst conclusion (a judgement, not a "
+    "definition of a technology). "
+    "executive_summary, problem_definition, comparative_analysis (each a string). "
+    "recommendation: a decisive paragraph AND, for design/architecture questions, a "
+    "component pipeline inside a ```code fence``` using ONLY plain ASCII characters "
+    "(-> | + and words; NO unicode box-drawing), plus the decision boundary — "
+    "explicitly answer what belongs in each component and why NOT put everything in "
+    "one mechanism. Do not re-define each technology; the approaches section does that. "
     "reasoning: a list of {finding_id, interpretation, implication}. "
     "evaluation_framework: a list of {criterion, definition}. "
     "approaches: a list of {name, how_it_works, advantages[], disadvantages[], "
@@ -104,6 +110,7 @@ async def build_report_evidence_first(
     report.executive_summary = (synth.get("executive_summary") or "").strip() \
         or _default_summary(mission.objective, len(art.findings))
     report.problem_definition = (synth.get("problem_definition") or "").strip()
+    report.bottom_line = (synth.get("bottom_line") or "").strip()
 
     repair_report(report)
     return report

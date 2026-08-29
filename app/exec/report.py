@@ -89,6 +89,7 @@ class Report:
     meta: dict = field(default_factory=dict)
     snapshot: list[Metric] = field(default_factory=list)
     executive_summary: str = ""
+    bottom_line: str = ""                           # the headline analyst conclusion
     problem_definition: str = ""                    # what the topic is / why it matters
     evaluation_framework: list[dict] = field(default_factory=list)  # criterion/definition
     findings: list[Finding] = field(default_factory=list)

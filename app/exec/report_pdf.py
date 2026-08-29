@@ -502,8 +502,10 @@ def _body(c: _Canvas, r: Report) -> None:
         top = c.y
         c.para(_prose(r.executive_summary), 10.5)
         c.rect(_L - 12, top - 6, 3, (c.y - top), fill=_ACCENT)  # accent bar
-        bl = _prose(r.findings[0].body) if r.findings else _prose(r.executive_summary)
-        bl = (bl.split(". ")[0].rstrip(".") + ".") if bl else ""
+        bl = _prose(r.bottom_line)
+        if not bl:
+            src = _prose(r.executive_summary) or (_prose(r.findings[0].body) if r.findings else "")
+            bl = (src.split(". ")[0].rstrip(".") + ".") if src else ""
         if bl:
             _bottom_line(c, bl[:360])
 
@@ -519,7 +521,7 @@ def _body(c: _Canvas, r: Report) -> None:
                 for d in r.evaluation_framework]
         _table(c, Table(["Criterion", "Definition"], rows, ""))
 
-    if r.findings:
+    if r.findings and not r.approaches:   # per-approach sections cover the same ground
         _section_title(c, n, "Key Findings")
         n += 1
         for i, f in enumerate(r.findings, 1):
