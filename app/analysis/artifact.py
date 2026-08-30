@@ -59,6 +59,9 @@ class ArtifactSource:
     authors: list[str] = field(default_factory=list)
     year: int | None = None
     venue: str = ""
+    snippet: str = ""            # retrieved content, used to gate topical relevance
+    relevance: float | None = None       # [0,1] vs the research question; None = unassessed
+    relevance_basis: str = ""            # transparent explanation of the relevance score
 
     def enrich(self, meta: dict) -> None:
         """Attach real bibliographic metadata gathered during research."""
@@ -66,6 +69,7 @@ class ArtifactSource:
         self.authors = list(meta.get("authors") or self.authors)
         self.year = meta.get("year") or self.year
         self.venue = str(meta.get("venue") or self.venue)
+        self.snippet = str(meta.get("snippet") or self.snippet)
 
     def citation(self) -> str:
         """A proper reference string when metadata exists, else the title/domain."""
@@ -171,6 +175,7 @@ class AnalysisArtifact:
     findings: list[ArtifactFinding] = field(default_factory=list)
     limitations: list[str] = field(default_factory=list)
     uncertainties: list[str] = field(default_factory=list)
+    dropped_sources: int = 0   # sources excluded by the relevance gate (off-topic)
 
     # --- construction helpers ---
 

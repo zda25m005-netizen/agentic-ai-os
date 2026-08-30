@@ -175,10 +175,20 @@ _ASCII_ART = {ord(k): v for k, v in {
     "•": "-", "·": "-", "●": "*", "○": "o", "”": '"', "“": '"', "’": "'", "‘": "'",
 }.items()}
 
+# Invisible / format characters that scraped web text (Wikipedia, PDFs) carries:
+# soft hyphen, zero-width spaces/joiners, bidi marks, word joiner, BOM, and the
+# unicode replacement char. Left in, a soft hyphen (U+00AD) becomes a mid-word
+# break that copies out as a stray glyph ("analy<?>sis"). Delete them outright.
+_INVISIBLE = {c: None for c in (
+    0x00AD, 0x200B, 0x200C, 0x200D, 0x200E, 0x200F, 0x2028, 0x2029,
+    0x2060, 0xFEFF, 0xFFFD, 0xFFFE, 0xFFFF,
+)}
+_NORMALIZE = {**_ASCII_ART, **_INVISIBLE, 0x00A0: " ", 0x2011: "-"}  # nbsp, non-breaking hyphen
+
 
 def to_ascii_art(text: str) -> str:
-    """Map unicode box-drawing / arrows to ASCII so diagrams render in any engine."""
-    return (text or "").translate(_ASCII_ART)
+    """Normalise text for any PDF engine: box-drawing/arrows -> ASCII, strip invisibles."""
+    return (text or "").translate(_NORMALIZE)
 
 
 def inline_to_plain(text: str) -> str:

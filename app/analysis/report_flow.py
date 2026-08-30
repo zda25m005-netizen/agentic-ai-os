@@ -45,9 +45,11 @@ _SYS_SYNTH = (
     "reasoning: a list of {finding_id, interpretation, implication}. "
     "evaluation_framework: a list of {criterion, definition}. "
     "approaches: a list of {name, how_it_works, advantages[], disadvantages[], "
-    "failure_modes[], mitigations[]}, one per entity, using the real entity names. "
-    "failure_analysis: a risk register of {failure, mechanism, probability, impact, "
-    "detection, mitigation, residual_risk}. "
+    "failure_modes[], mitigations[]}, one per entity, using the real entity names; "
+    "give 3-5 concrete failure_modes for each. "
+    "failure_analysis: a risk register of {option, failure, mechanism, probability, "
+    "impact, detection, mitigation, residual_risk} with 3-5 rows PER option (so a "
+    "3-option study has ~9-15 rows); name the option each row belongs to. "
     "key_insights: 3-6 high-value {insight, confidence} items, each a non-obvious "
     "evidence-backed takeaway. "
     "evidence_summary: a list of {finding, strength (Strong/Moderate/Weak), "
@@ -122,6 +124,11 @@ async def build_report_evidence_first(
     # and we never ask it to, so the grounded findings are preserved.
     if synth:
         synth.pop("findings", None)
+        # Scores are evidence-derived (set in artifact_to_report); never let the LLM
+        # assign or overwrite them, so every 0-5 traces to supporting/contradicting
+        # claims rather than model opinion.
+        synth.pop("scorecard", None)
+        synth.pop("scoring_rationale", None)
         _synthesize_into(report, synth)
     report.executive_summary = (synth.get("executive_summary") or "").strip() \
         or _default_summary(mission.objective, len(art.findings))
@@ -149,11 +156,18 @@ async def build_report_evidence_first(
     report.evidence_summary = _dicts(
         "evidence_summary", ("finding", "strength", "confidence"), "finding")
     report.trade_offs = _dicts("trade_offs", ("entity", "pros", "cons"), "entity", 5)
-    report.scoring_rationale = _dicts(
-        "scoring_rationale", ("criterion", "reason", "confidence"), "criterion")
+    # scoring_rationale is evidence-derived in artifact_to_report; do not overwrite.
     dc = synth.get("decision_change")
     if isinstance(dc, list):
         report.decision_change = [str(x) for x in dc if str(x).strip()][:5]
+
+    # Recommendation must be proportional to the evidence. If the LLM gave none,
+    # fall back to the evidence-grounded decision summary (never "use everything").
+    dec = report.decision or {}
+    if not report.recommendation.strip() and dec.get("summary"):
+        report.recommendation = (
+            f"{dec['summary']} Confidence: {dec.get('confidence', 'Low')} "
+            f"(grounded in {dec.get('evidence_count', 0)} validated source(s)).")
 
     repair_report(report)
     return report

@@ -38,6 +38,7 @@ class SourceRecord:
     credibility: str = ""            # High | Medium | Low (internal assessment)
     freshness: str = ""              # Recent | Current | Background | Unknown
     citation: str = ""               # formatted reference (authors, year, title, venue)
+    relevance: float | None = None   # [0,1] topical relevance to the research question
 
 
 @dataclass
@@ -102,6 +103,11 @@ class Report:
     evidence_summary: list[dict] = field(default_factory=list)   # {finding, strength, confidence}
     trade_offs: list[dict] = field(default_factory=list)         # {entity, pros[], cons[]}
     scoring_rationale: list[dict] = field(default_factory=list)  # {criterion, reason, confidence}
+    # per option x criterion evidence behind each 0-5 score:
+    # {entity, criterion, score, supporting, contradicting, confidence, refs, rationale}
+    evidence_scores: list[dict] = field(default_factory=list)
+    # claim-level traceability: {claim, refs[], verification, confidence}
+    evidence_matrix: list[dict] = field(default_factory=list)
     decision_change: list[str] = field(default_factory=list)     # what would change the decision
     # failure/mechanism/probability/impact/detection/mitigation/residual_risk
     failure_analysis: list[dict] = field(default_factory=list)
@@ -110,8 +116,12 @@ class Report:
     trail: ResearchTrail | None = None
     sections: list[ReportSection] = field(default_factory=list)
     recommendation: str = ""                       # decisive analyst recommendation
+    # evidence-grounded final decision: {recommended[], components[], selective[],
+    # confidence, evidence_count, summary, consistency_flags[]}
+    decision: dict = field(default_factory=dict)
     decision_rationale: list[dict] = field(default_factory=list)  # requirement/decision/reason
     strategic_implications: list[str] = field(default_factory=list)
+    evidence_graph: str = ""                        # ASCII research-evidence-graph diagram
     methodology: str = ""
     limitations: list[str] = field(default_factory=list)
     sources: list[str] = field(default_factory=list)

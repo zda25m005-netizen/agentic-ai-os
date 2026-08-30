@@ -16,6 +16,14 @@ from app.analysis.claims import extract_claims, strip_noise
 from app.analysis.compare import build_comparisons
 from app.analysis.quant import derived_comparisons, extract_metrics
 from app.analysis.reason import generate_findings
+from app.analysis.relevance import (
+    RELEVANCE_MIN,
+    build_question,
+    is_assessable,
+)
+from app.analysis.relevance import (
+    score as relevance_score,
+)
 from app.analysis.verify import verify
 from app.missions.models import Mission, Task
 
@@ -63,8 +71,45 @@ def parse_objective(objective: str) -> tuple[list[str], list[str], str]:
         entities = _split_entities(objective.rsplit(":", 1)[-1])
     if not entities and re.search(r"\bvs\.?\b|\bversus\b", objective, re.I):
         entities = _split_entities(objective)
+    # "Compare A, B, and C for X" — split the option list after the leading verb,
+    # dropping a trailing scope clause. Gated to comparison/technical missions so
+    # a research objective with an "and" is not falsely split into entities.
+    if not entities and mtype in {"COMPARISON", "TECHNICAL_ANALYSIS"}:
+        tail = re.sub(r"\bfor\b.*$", "", objective, flags=re.I)
+        cand = _split_entities(tail)
+        if len(cand) >= 2:
+            entities = cand
     entities = [e for e in entities if e][:5]
     return entities, [], mtype
+
+
+def _apply_relevance_gate(art: AnalysisArtifact) -> None:
+    """Score sources vs the objective; drop assessable off-topic ones (mutates)."""
+    question = build_question(art.objective, art.entities, art.dimensions)
+    dropped: dict[str, tuple[str, float]] = {}
+    kept: list = []
+    for s in art.sources:
+        rel, basis = relevance_score(s.title, s.snippet, question)
+        s.relevance, s.relevance_basis = rel, basis
+        assessable = is_assessable(s.title, s.snippet, s.publisher)
+        if assessable and rel < RELEVANCE_MIN:
+            dropped[s.id] = (s.title or s.publisher, rel)
+        else:
+            kept.append(s)
+
+    if not dropped:
+        return
+    art.dropped_sources = len(dropped)
+    drop_ids = set(dropped)
+    art.sources = kept
+    for c in art.claims:
+        c.source_ids = [x for x in c.source_ids if x not in drop_ids]
+    for m in art.metrics:
+        m.source_ids = [x for x in m.source_ids if x not in drop_ids]
+    names = ", ".join(f"{t!r} (relevance {r:.2f})" for t, r in list(dropped.values())[:4])
+    art.limitations.append(
+        f"{len(dropped)} retrieved source(s) were excluded as off-topic for this "
+        f"question and are not cited: {names}.")
 
 
 def build_analysis_artifact(mission: Mission, tasks: list[Task]) -> AnalysisArtifact:
@@ -94,6 +139,12 @@ def build_analysis_artifact(mission: Mission, tasks: list[Task]) -> AnalysisArti
     for s in art.sources:
         if s.url in meta_by_url:
             s.enrich(meta_by_url[s.url])
+
+    # Relevance gate: score every source against the research question and drop
+    # assessable sources that are off-topic BEFORE they can enter the evidence
+    # graph, the scorecard or the bibliography. Sources with no readable text
+    # (bare domains) are kept — missing metadata is not evidence of irrelevance.
+    _apply_relevance_gate(art)
 
     verify(art)
     art.metrics.extend(derived_comparisons(art.metrics))

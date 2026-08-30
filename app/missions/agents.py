@@ -214,7 +214,8 @@ class MultiAgentExecutor:
                 if u:
                     by_url[u] = {"url": u, "title": r.get("title", ""),
                                  "authors": r.get("authors") or [], "year": r.get("year"),
-                                 "venue": r.get("venue") or ""}
+                                 "venue": r.get("venue") or "",
+                                 "snippet": (r.get("snippet") or "")[:1500]}
             meta["sources"] = list(by_url.values())
             await self._repo.update_meta(mission_id, meta)
         except Exception:

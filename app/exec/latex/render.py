@@ -69,6 +69,13 @@ _PREAMBLE = r"""\documentclass[11pt]{article}
 \setlength{\parskip}{5pt}
 \renewcommand{\arraystretch}{1.25}
 
+% No mid-word hyphenation: a report should never break "analysis" as "analy-sis".
+% emergencystretch keeps justified text from overflowing once hyphenation is off.
+\hyphenpenalty=10000
+\exhyphenpenalty=10000
+\tolerance=2000
+\setlength{\emergencystretch}{3em}
+
 % --- headings ---
 \titleformat{\section}{\sffamily\Large\bfseries\color{navy}}{\thesection}{0.6em}{}[{\color{rule}\titlerule[0.8pt]}]
 \titlespacing*{\section}{0pt}{16pt}{6pt}
@@ -370,20 +377,52 @@ def _failure_analysis(r: Report) -> str:
     if not r.failure_analysis:
         return ""
     fa = r.failure_analysis
-    rich = any(d.get("mechanism") or d.get("detection") or d.get("residual_risk") for d in fa)
+    # The wide 7-column table is used only when a mechanism AND analytical columns are
+    # populated (LLM path). A mechanism-only register (deterministic path) renders as a
+    # compact 3-column table; probability/impact-only rows keep the medium table below.
+    has_mech = any(d.get("mechanism") for d in fa)
+    rich = has_mech and any(d.get("detection") or d.get("residual_risk")
+                            or d.get("probability") or d.get("impact") for d in fa)
+    if not rich and has_mech:
+        has_opt = any(d.get("option") for d in fa)
+        head = ((r"\sffamily\bfseries Option & " if has_opt else "")
+                + r"\sffamily\bfseries Failure & \sffamily\bfseries Mechanism")
+        spec = (r">{\RaggedRight\arraybackslash}p{22mm} " if has_opt else "") + r"L L"
+        last = None
+        rows = ""
+        for d in fa:
+            opt = ""
+            if has_opt:
+                o = str(d.get("option", ""))
+                opt = (r"\sffamily\bfseries " + _il(o) if o != last else "") + " & "
+                last = o
+            rows += opt + _il(d.get("failure", "")) + " & " + _il(d.get("mechanism", "")) + r" \\" + "\n"
+        return (r"\section{Failure Mode Analysis}\small"
+                r"\begin{tabularx}{\linewidth}{@{}" + spec + r"@{}}\toprule "
+                + head + r" \\\midrule " + rows + r"\bottomrule\end{tabularx}\normalsize")
     if rich:
-        # Failure | Mechanism | P | I | Detection | Mitigation | Residual
+        has_opt = any(d.get("option") for d in fa)
         p = r">{\RaggedRight\arraybackslash}p"
-        spec = (r"L L " + p + r"{12mm} " + p + r"{12mm} L L " + p + r"{12mm}")
-        head = (r"\sffamily\bfseries Failure & \sffamily\bfseries Mechanism & "
+        # [Option] | Failure | Mechanism | P | I | Detection | Mitigation | Residual
+        spec = ((p + r"{18mm} " if has_opt else "")
+                + r"L L " + p + r"{12mm} " + p + r"{12mm} L L " + p + r"{12mm}")
+        head = ((r"\sffamily\bfseries Option & " if has_opt else "")
+                + r"\sffamily\bfseries Failure & \sffamily\bfseries Mechanism & "
                 r"\sffamily\bfseries Prob. & \sffamily\bfseries Impact & "
                 r"\sffamily\bfseries Detection & \sffamily\bfseries Mitigation & "
                 r"\sffamily\bfseries Residual")
-        rows = "".join(
-            _il(d.get("failure", "")) + " & " + _il(d.get("mechanism", "")) + " & "
-            + _il(d.get("probability", "")) + " & " + _il(d.get("impact", "")) + " & "
-            + _il(d.get("detection", "")) + " & " + _il(d.get("mitigation", "")) + " & "
-            + _il(d.get("residual_risk", "")) + r" \\" + "\n" for d in fa)
+        last = None
+        rows = ""
+        for d in fa:
+            opt = ""
+            if has_opt:
+                o = str(d.get("option", ""))
+                opt = (r"\sffamily\bfseries " + _il(o) if o != last else "") + " & "
+                last = o
+            rows += (opt + _il(d.get("failure", "")) + " & " + _il(d.get("mechanism", "")) + " & "
+                     + _il(d.get("probability", "")) + " & " + _il(d.get("impact", "")) + " & "
+                     + _il(d.get("detection", "")) + " & " + _il(d.get("mitigation", "")) + " & "
+                     + _il(d.get("residual_risk", "")) + r" \\" + "\n")
         return (r"\section{Failure Mode Analysis}\scriptsize"
                 r"\begin{tabularx}{\linewidth}{@{}" + spec + r"@{}}\toprule "
                 + head + r" \\\midrule " + rows + r"\bottomrule\end{tabularx}\normalsize")
@@ -459,6 +498,40 @@ def _scoring_methodology(r: Report) -> str:
             + r"\bottomrule\end{tabularx}\normalsize")
 
 
+def _evidence_scores(r: Report) -> str:
+    """Per option x criterion: the supporting/contradicting evidence behind each score."""
+    if not r.evidence_scores:
+        return ""
+    conf_col = {"High": "confhigh", "Medium": "confmed", "Low": "conflow"}
+    rows = []
+    last = None
+    for d in r.evidence_scores:
+        ent = str(d.get("entity", ""))
+        show_ent = "" if ent == last else tex_escape(ent)
+        last = ent
+        col = conf_col.get(str(d.get("confidence", "")), "confana")
+        refs = ", ".join(str(x) for x in (d.get("refs") or [])) or "--"
+        rows.append(
+            r"\sffamily\bfseries " + show_ent + " & " + _il(str(d.get("criterion", "")))
+            + " & " + tex_escape(f"{d.get('score', '')}/5")
+            + " & " + tex_escape(str(d.get("supporting", 0)))
+            + " & " + tex_escape(str(d.get("contradicting", 0)))
+            + r" & {\color{" + col + r"}\footnotesize\bfseries "
+            + tex_escape(str(d.get("confidence", ""))) + "} & " + tex_escape(refs) + r" \\")
+    body = "\n".join(rows)
+    return (r"\section{Evidence-Weighted Scoring}"
+            r"{\footnotesize\color{mute}Each score is built from the evidence: the count of "
+            r"supporting vs contradicting claims mapped to that criterion, weighted by source "
+            r"reliability. Confidence reflects how many independent sources back the cell.}"
+            r"\par\vspace{3pt}\small"
+            r"\begin{tabularx}{\linewidth}{@{}>{\RaggedRight\arraybackslash}p{26mm} L "
+            r"c c c >{\RaggedRight\arraybackslash}p{15mm} >{\RaggedRight\arraybackslash}p{12mm}@{}}"
+            r"\toprule \sffamily\bfseries Option & \sffamily\bfseries Criterion & "
+            r"\sffamily\bfseries Score & \sffamily\bfseries Sup. & \sffamily\bfseries Con. & "
+            r"\sffamily\bfseries Confidence & \sffamily\bfseries Evidence \\\midrule "
+            + body + r"\bottomrule\end{tabularx}\normalsize")
+
+
 def _decision_change(r: Report) -> str:
     if not r.decision_change:
         return ""
@@ -482,10 +555,38 @@ def _reasoning_chains(r: Report) -> str:
     return "\n\n".join(out)
 
 
-def _recommendation(r: Report) -> str:
-    if not r.recommendation and not r.decision_rationale:
+def _final_decision(r: Report) -> str:
+    """A prominent, evidence-grounded decision box leading the Recommendation."""
+    d = r.decision or {}
+    if not d.get("recommended"):
         return ""
-    out = [r"\section{Recommendation}"]
+    conf = str(d.get("confidence", "Low"))
+    col = {"High": "confhigh", "Medium": "confmed", "Low": "conflow"}.get(conf, "confana")
+    lines = [r"{\sffamily\bfseries\large\color{navy}Final Decision}\par\vspace{4pt}"]
+    lines.append(r"{\sffamily\bfseries Recommended:} "
+                 + tex_escape(" + ".join(d["recommended"])) + r"\par")
+    for comp in d.get("components", []):
+        if comp.get("role"):
+            lines.append(r"\quad{\color{steel}$\bullet$} "
+                         + r"{\sffamily\bfseries " + tex_escape(str(comp.get("component", "")))
+                         + r"} --- " + tex_escape(str(comp.get("role", ""))) + r"\par")
+    for s in d.get("selective", []):
+        lines.append(r"{\sffamily\bfseries Use selectively:} "
+                     + r"{\sffamily\bfseries " + tex_escape(str(s.get("option", ""))) + r"} --- "
+                     + tex_escape(str(s.get("reason", ""))) + r"\par")
+    lines.append(r"\vspace{2pt}{\sffamily\bfseries Confidence:} "
+                 + r"{\color{" + col + r"}\bfseries " + tex_escape(conf) + r"}"
+                 + r"\quad{\sffamily\bfseries Evidence:} "
+                 + tex_escape(f"{d.get('evidence_count', 0)} validated source(s)") + r"\par")
+    body = "\n".join(lines)
+    return (r"\begin{tcolorbox}[colback=cardbg,colframe=navy,boxrule=0.8pt,arc=2pt,"
+            r"left=9pt,right=9pt,top=7pt,bottom=7pt]" + body + r"\end{tcolorbox}\vspace{4pt}")
+
+
+def _recommendation(r: Report) -> str:
+    if not r.recommendation and not r.decision_rationale and not (r.decision or {}).get("recommended"):
+        return ""
+    out = [r"\section{Recommendation}", _final_decision(r)]
     if r.recommendation:
         # block parse so an ASCII architecture pipeline in a code fence renders
         out.append(md.to_latex(md.parse(md.strip_bare_urls(r.recommendation)),
@@ -503,6 +604,47 @@ def _recommendation(r: Report) -> str:
             r"\sffamily\bfseries Reason \\\midrule " + rows
             + r"\bottomrule\end{tabularx}\normalsize")
     return "\n\n".join(out)
+
+
+def _methodology(r: Report) -> str:
+    """How the analysis was produced + the Research Evidence Graph diagram."""
+    if not r.evidence_graph:
+        return ""
+    out = [r"\section{Research Methodology}",
+           r"{\small This report is produced by an evidence-first pipeline: "
+           r"\textbf{Search} candidate sources $\rightarrow$ \textbf{Filter} by topical "
+           r"relevance $\rightarrow$ \textbf{Verify} across independent sources $\rightarrow$ "
+           r"\textbf{Extract} atomic claims $\rightarrow$ \textbf{Compare} options $\rightarrow$ "
+           r"\textbf{Score} each criterion from supporting vs contradicting evidence "
+           r"$\rightarrow$ \textbf{Recommend} in proportion to the evidence. Sources that fail "
+           r"the relevance gate never enter the evidence set, and no score is assigned "
+           r"without backing claims.\par}",
+           r"\subsection*{Research Evidence Graph}",
+           md.to_latex(md.parse(r.evidence_graph), tex_escape, table_fn=_md_table)]
+    return "\n\n".join(out)
+
+
+def _evidence_matrix(r: Report) -> str:
+    """Claim-level traceability: each claim, its sources, verification and confidence."""
+    if not r.evidence_matrix:
+        return ""
+    conf_col = {"High": "confhigh", "Medium": "confmed", "Low": "conflow"}
+    rows = ""
+    for d in r.evidence_matrix:
+        refs = ", ".join(str(x) for x in (d.get("refs") or [])) or "--"
+        col = conf_col.get(str(d.get("confidence", "")), "confana")
+        rows += (_il(str(d.get("claim", ""))) + " & " + tex_escape(refs) + " & "
+                 + _il(str(d.get("verification", ""))) + r" & {\color{" + col + r"}\bfseries "
+                 + tex_escape(str(d.get("confidence", ""))) + r"} \\" + "\n")
+    return (r"\section{Evidence Matrix}"
+            r"{\footnotesize\color{mute}Each source-backed claim, the reference(s) that "
+            r"support it, its cross-source verification status and evidence confidence.}"
+            r"\par\vspace{3pt}\small"
+            r"\begin{tabularx}{\linewidth}{@{}L >{\RaggedRight\arraybackslash}p{16mm} "
+            r">{\RaggedRight\arraybackslash}p{26mm} >{\RaggedRight\arraybackslash}p{16mm}@{}}"
+            r"\toprule \sffamily\bfseries Claim & \sffamily\bfseries Source(s) & "
+            r"\sffamily\bfseries Verification & \sffamily\bfseries Confidence \\\midrule "
+            + rows + r"\bottomrule\end{tabularx}\normalsize")
 
 
 def _strategic(r: Report) -> str:
@@ -599,6 +741,7 @@ def render_tex(report: Report, chart_keys: set[str] | None = None) -> str:
         _cover(report),
         _exec_summary(report),
         _problem(report),
+        _methodology(report),
         _framework(report),
         # Skip the standalone Key Findings when per-approach sections cover the
         # same ground — avoids defining each option twice.
@@ -607,7 +750,9 @@ def render_tex(report: Report, chart_keys: set[str] | None = None) -> str:
         _evidence_summary(report),
         _comparative(report),
         _key_insights(report),
+        _evidence_matrix(report),
         _scorecard(report.scorecard) if report.scorecard else "",
+        _evidence_scores(report),
         _scoring_methodology(report),
         _visual(chart_keys),
         _trade_offs(report),

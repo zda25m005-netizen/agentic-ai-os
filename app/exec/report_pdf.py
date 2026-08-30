@@ -514,6 +514,16 @@ def _body(c: _Canvas, r: Report) -> None:
         n += 1
         _render_blocks(c, md.parse(md.strip_bare_urls(r.problem_definition)))
 
+    if r.evidence_graph:
+        _section_title(c, n, "Research Methodology")
+        n += 1
+        c.para("Evidence-first pipeline: Search candidate sources -> Filter by topical "
+               "relevance -> Verify across independent sources -> Extract atomic claims "
+               "-> Compare options -> Score each criterion from supporting vs "
+               "contradicting evidence -> Recommend in proportion to the evidence. "
+               "Sources failing the relevance gate never enter the evidence set.", 10)
+        _render_blocks(c, md.parse(r.evidence_graph))
+
     if r.evaluation_framework:
         _section_title(c, n, "Evaluation Framework")
         n += 1
@@ -554,6 +564,17 @@ def _body(c: _Canvas, r: Report) -> None:
         n += 1
         _render_blocks(c, md.parse(md.strip_bare_urls(r.comparative_analysis)))
 
+    if r.evidence_matrix:
+        _section_title(c, n, "Evidence Matrix")
+        n += 1
+        c.para("Each source-backed claim, its supporting reference(s), cross-source "
+               "verification status and evidence confidence.", 9, color=_MUTE)
+        rows = [[d.get("claim", ""),
+                 ", ".join(str(x) for x in (d.get("refs") or [])) or "-",
+                 d.get("verification", ""), d.get("confidence", "")]
+                for d in r.evidence_matrix]
+        _table(c, Table(["Claim", "Src", "Verification", "Confidence"], rows, ""))
+
     if r.scorecard:
         _section_title(c, n, "Decision Matrix")
         n += 1
@@ -588,6 +609,25 @@ def _body(c: _Canvas, r: Report) -> None:
         rows = [[d.get("criterion", ""), d.get("reason", ""), d.get("confidence", "")]
                 for d in r.scoring_rationale]
         _table(c, Table(["Criterion", "Rationale", "Confidence"], rows, ""))
+
+    if r.evidence_scores:
+        _section_title(c, n, "Evidence-Weighted Scoring")
+        n += 1
+        c.para("Each score is built from supporting vs contradicting claims mapped to "
+               "the criterion, weighted by source reliability. Confidence reflects how "
+               "many independent sources back the cell.", 9, color=_MUTE)
+        last = None
+        rows = []
+        for d in r.evidence_scores:
+            ent = str(d.get("entity", ""))
+            show = "" if ent == last else ent
+            last = ent
+            refs = ", ".join(str(x) for x in (d.get("refs") or [])) or "-"
+            rows.append([show, str(d.get("criterion", "")), f"{d.get('score', '')}/5",
+                         str(d.get("supporting", 0)), str(d.get("contradicting", 0)),
+                         str(d.get("confidence", "")), refs])
+        _table(c, Table(["Option", "Criterion", "Score", "Sup", "Con", "Conf", "Evid"],
+                        rows, ""))
 
     if r.trade_offs:
         _section_title(c, n, "Trade-off Analysis")
@@ -639,9 +679,24 @@ def _body(c: _Canvas, r: Report) -> None:
                     _bullet(c, "", v, indent=52)
             c.y += 6
 
-    if r.recommendation or r.decision_rationale:
+    if r.recommendation or r.decision_rationale or (r.decision or {}).get("recommended"):
         _section_title(c, n, "Recommendation")
         n += 1
+        d = r.decision or {}
+        if d.get("recommended"):
+            c.text(_L, c.y + 12, 11, "Final Decision", bold=True, color=_ACCENT)
+            c.y += 18
+            c.text(_L, c.y + 10, 10, "Recommended: " + " + ".join(d["recommended"]), bold=True)
+            c.y += 15
+            for comp in d.get("components", []):
+                if comp.get("role"):
+                    _bullet(c, "-", f"{comp.get('component', '')} - {comp.get('role', '')}")
+            for s in d.get("selective", []):
+                _bullet(c, "-", f"Use {s.get('option', '')} selectively: {s.get('reason', '')}")
+            c.text(_L, c.y + 10, 10,
+                   f"Confidence: {d.get('confidence', 'Low')}    "
+                   f"Evidence: {d.get('evidence_count', 0)} validated source(s)", bold=True)
+            c.y += 16
         if r.recommendation:
             _render_blocks(c, md.parse(md.strip_bare_urls(r.recommendation)))
         if r.decision_rationale:
