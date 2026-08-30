@@ -23,6 +23,7 @@ from app.missions.models import Task
 from app.missions.repository import MissionRepository
 from app.tools import wikipedia
 from app.tools.deep_search import deep_research
+from app.tools.fetch_extract import enrich_sources
 
 ChatFn = Callable[[list[dict]], Awaitable[str]]
 SearchFn = Callable[[str], Awaitable[list[dict]]]
@@ -36,7 +37,14 @@ async def default_search(query: str, max_results: int = 4) -> list[dict]:
     keyless. Falls back to plain Wikipedia search if the richer path yields nothing.
     """
     results = await deep_research(query, max_results=max_results)
-    return results or await wikipedia.search(query, max_results=max_results)
+    results = results or await wikipedia.search(query, max_results=max_results)
+    # Deepen evidence: replace shallow snippets with full page text (best-effort).
+    if results and get_settings().research_fetch_fulltext:
+        try:
+            results = await enrich_sources(results, limit=8)
+        except Exception:
+            pass   # enrichment must never break a research step
+    return results
 
 ROLE_PROMPTS: dict[str, str] = {
     "researcher": (

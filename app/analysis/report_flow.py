@@ -10,6 +10,7 @@ deterministic report.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from collections.abc import Awaitable, Callable
@@ -17,6 +18,7 @@ from datetime import UTC, datetime
 
 from app.analysis.artifact import AnalysisArtifact
 from app.analysis.pipeline import build_analysis_artifact
+from app.analysis.scoring import _mentions, _polarity, score_artifact
 from app.analysis.to_report import artifact_to_report
 from app.analysis.validate import repair_report
 from app.exec.report import Report
@@ -26,47 +28,58 @@ from app.missions.models import Mission, Task
 ChatFn = Callable[[list[dict]], Awaitable[str]]
 _OBJ = re.compile(r"\{.*\}", re.DOTALL)
 
-_SYS_SYNTH = (
-    "You are a senior research analyst. You are given a STRUCTURED analysis as JSON "
-    "(sources, verified claims, findings). Organise and EXPLAIN this evidence in a "
-    "professional report. Return ONLY a JSON object with these keys: "
-    "bottom_line: ONE decisive 1-2 sentence analyst conclusion (a judgement, not a "
-    "definition of a technology). "
-    "executive_summary, problem_definition, comparative_analysis (each a string). "
-    "recommendation: a decisive paragraph AND, for design/architecture questions, a "
-    "multi-line component ARCHITECTURE DIAGRAM inside a ```code fence``` using ONLY "
-    "plain ASCII (-> | + _ and words; NO unicode box-drawing), showing each memory/"
-    "component layer and the data flow, plus a short explanation of what goes into "
-    "each layer and why NOT put everything in one mechanism. "
-    "reasoning_chains: a list of {claim, evidence, reasoning, trade_off, decision} — "
-    "for each major design decision, give the Claim, the Evidence it rests on, the "
-    "technical Reasoning, the Trade-off, and the Decision. This justifies the "
-    "scorecard; do not assign a score without a supporting reasoning chain. "
-    "reasoning: a list of {finding_id, interpretation, implication}. "
-    "evaluation_framework: a list of {criterion, definition}. "
-    "approaches: a list of {name, how_it_works, advantages[], disadvantages[], "
-    "failure_modes[], mitigations[]}, one per entity, using the real entity names; "
-    "give 3-5 concrete failure_modes for each. "
-    "failure_analysis: a risk register of {option, failure, mechanism, probability, "
-    "impact, detection, mitigation, residual_risk} with 3-5 rows PER option (so a "
-    "3-option study has ~9-15 rows); name the option each row belongs to. "
-    "key_insights: 3-6 high-value {insight, confidence} items, each a non-obvious "
-    "evidence-backed takeaway. "
-    "evidence_summary: a list of {finding, strength (Strong/Moderate/Weak), "
-    "confidence (High/Medium/Low)}. "
-    "trade_offs: a list of {entity, pros (list), cons (list)}, one per option. "
-    "scoring_rationale: for each scorecard criterion, {criterion, reason, confidence} "
-    "explaining HOW the 0-5 scores were derived from the evidence. "
-    "decision_change: 2-4 strings answering 'what evidence would change this "
-    "recommendation?'. "
-    "For every major claim also give counter_evidence in the reasoning chain (a "
-    "'counter' field) so the analysis is not one-sided; if none exists, say so. "
-    "scorecard: {dimensions[], entities[], scores{entity:[0-5 per dimension]}} — the "
-    "0-5 scores are a QUALITATIVE analyst assessment of the evidence, never a "
-    "measured statistic. decision_rationale: a list of {requirement, decision, reason}. "
-    "STRICT RULES: base everything on the provided findings/claims; NEVER add facts, "
-    "numbers, statistics, sources, or claims not in the input; do not state specific "
-    "percentages/market figures as fact; do not contradict the verification status."
+# Shared preamble + hard grounding rules used by every focused synthesis call.
+_ANALYST = (
+    "You are a senior research analyst writing a rigorous, evidence-grounded report. "
+    "You are given STRUCTURED evidence as JSON. Organise and EXPLAIN it; do NOT invent. "
+)
+_RULES = (
+    " STRICT RULES: base every statement on the provided evidence; NEVER add facts, "
+    "numbers, statistics, sources or claims not in the input; do not state specific "
+    "percentages or market figures as fact; do not contradict the verification status; "
+    "be specific and cite the evidence you rely on rather than writing generically. "
+    "Return ONLY a valid JSON object, no prose outside it."
+)
+
+# Call 1 — narrative framing over the whole artifact.
+_SYS_NARRATIVE = (
+    _ANALYST + "Return ONLY JSON with: "
+    "bottom_line: ONE decisive 1-2 sentence judgement (not a definition). "
+    "executive_summary, problem_definition, comparative_analysis (strings). "
+    "evaluation_framework: [{criterion, definition}]. "
+    "key_insights: 3-6 {insight, confidence} non-obvious, evidence-backed takeaways. "
+    "evidence_summary: [{finding, strength (Strong/Moderate/Weak), confidence (High/"
+    "Medium/Low)}]. "
+    "decision_change: 2-4 strings answering 'what evidence would change the "
+    "recommendation?'." + _RULES
+)
+
+# Call 2 — per-option deep dives, fed each option's own evidence bundle.
+_SYS_APPROACHES = (
+    _ANALYST + "You are given the research question and, for each option, its evidence "
+    "bundle (claims with verification/confidence, per-criterion scores, and counter-"
+    "evidence). Write a deep dive for EACH option grounded in its bundle. Return ONLY "
+    "JSON with: approaches: [{name, how_it_works, advantages[], disadvantages[], "
+    "failure_modes[], mitigations[]}] one per option using the real names, 3-5 concrete "
+    "failure_modes each; failure_analysis: [{option, failure, mechanism, probability, "
+    "impact, detection, mitigation, residual_risk}] with 3-5 rows PER option. Every "
+    "advantage/failure must trace to a claim in that option's bundle." + _RULES
+)
+
+# Call 3 — tight reasoning chains + decision, fed bundles + scores + the decision.
+_SYS_REASONING = (
+    _ANALYST + "You are given the question, per-option evidence bundles, the evidence-"
+    "weighted scores, and the derived decision. Produce tight reasoning. Return ONLY "
+    "JSON with: reasoning_chains: [{claim, evidence, reasoning, trade_off, counter, "
+    "decision}] — each Decision MUST reference a specific score or claim; each chain "
+    "MUST include counter (contradicting evidence, or 'none found'); keep them crisp, "
+    "no filler. recommendation: a decisive paragraph consistent with the decision AND, "
+    "for design/architecture questions, a multi-line ASCII architecture diagram inside "
+    "a ```code fence``` (plain ASCII -> | + _ only, NO unicode), showing each component "
+    "layer and data flow and why NOT put everything in one mechanism. "
+    "decision_rationale: [{requirement, decision, reason}]. "
+    "reasoning: [{finding_id, interpretation, implication}] keyed to the given finding "
+    "ids." + _RULES
 )
 
 
@@ -92,12 +105,72 @@ def _apply_synthesis(art: AnalysisArtifact, data: dict) -> None:
             f.implication = str(r.get("implication", "")).strip()
 
 
+def _evidence_bundles(art: AnalysisArtifact) -> list[dict]:
+    """Per-option grounded evidence: claims (+verification/refs), scores, counter-evidence.
+
+    Feeding each synthesis call the specific evidence for the option it is writing
+    about forces grounded, specific prose instead of generic filler.
+    """
+    esc = score_artifact(art)
+    ref_of = {s.id: i + 1 for i, s in enumerate(art.sources)}
+    ewords = {e: {w for w in re.findall(r"[a-z0-9]+", e.lower()) if len(w) > 2}
+              for e in art.entities}
+    bundles = []
+    for e in art.entities:
+        claims = [c for c in art.claims if _mentions(c, e, ewords[e])]
+        bundles.append({
+            "option": e,
+            "claims": [{
+                "statement": c.statement.strip()[:240],
+                "verification": c.verification.value, "confidence": c.confidence,
+                "refs": sorted({ref_of[s] for s in c.source_ids if s in ref_of}),
+            } for c in claims][:8],
+            "counter_evidence": [c.statement.strip()[:200] for c in claims
+                                 if _polarity(c.statement) < 0][:4],
+            "scores": [{"criterion": cell.criterion, "score": cell.score,
+                        "supporting": cell.supporting, "contradicting": cell.contradicting,
+                        "confidence": cell.confidence}
+                       for cell in esc.cells if cell.entity == e],
+        })
+    return bundles
+
+
+async def _call(chat_fn: ChatFn, system: str, payload: dict) -> dict:
+    try:
+        raw = await chat_fn([
+            {"role": "system", "content": system},
+            {"role": "user", "content": json.dumps(payload)[:8000]},
+        ])
+        return _parse(raw)
+    except Exception:
+        return {}
+
+
 async def synthesize_over_artifact(art: AnalysisArtifact, chat_fn: ChatFn) -> dict:
-    raw = await chat_fn([
-        {"role": "system", "content": _SYS_SYNTH},
-        {"role": "user", "content": json.dumps(art.to_llm_context())[:8000]},
-    ])
-    return _parse(raw)
+    """Decomposed synthesis: focused calls (narrative / approaches / reasoning) merged.
+
+    Small models spread thin across a 15-field mega-prompt; three tight calls, each
+    fed only what it needs (approaches + reasoning get per-option evidence bundles),
+    produce sharper write-ups and tighter reasoning chains. Runs concurrently; any
+    call that fails just contributes nothing.
+    """
+    ctx = art.to_llm_context()
+    bundles = _evidence_bundles(art)
+    findings = [{"id": f.id, "observation": f.observation} for f in art.findings]
+    reason_ctx = {"objective": art.objective, "options": bundles,
+                  "findings": findings,
+                  "note": "Scores and decision are fixed upstream; explain, do not change."}
+
+    narrative, approaches, reasoning = await asyncio.gather(
+        _call(chat_fn, _SYS_NARRATIVE, ctx),
+        _call(chat_fn, _SYS_APPROACHES, {"objective": art.objective, "options": bundles}),
+        _call(chat_fn, _SYS_REASONING, reason_ctx),
+    )
+    merged: dict = {}
+    for part in (narrative, approaches, reasoning):
+        if isinstance(part, dict):
+            merged.update(part)
+    return merged
 
 
 async def build_report_evidence_first(

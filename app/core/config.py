@@ -73,6 +73,8 @@ class Settings(BaseSettings):
     # Evidence-first report flow: build a structured Analysis Artifact and let the
     # LLM only synthesise prose over it (vs. the legacy LLM-authored report).
     report_evidence_first: bool = Field(default=True)
+    # Fetch full page text for retrieved sources (deeper evidence than snippets).
+    research_fetch_fulltext: bool = Field(default=True)
 
 
 @lru_cache
