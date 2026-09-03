@@ -1,17 +1,71 @@
-export default function Evaluations() {
-  const rows: [string, string][] = [
-    ["task success", "0.875"], ["recovery rate", "0.667"], ["tool selection", "0.857"],
-    ["memory retrieval", "1.000"], ["safety block", "1.000"], ["planning validity", "1.000"],
-  ];
+"use client";
+
+import { useState } from "react";
+import "../evaluations.css";
+import BenchmarkSummary from "../components/eval/BenchmarkSummary";
+import BenchmarkTable from "../components/eval/BenchmarkTable";
+import EvaluationBreakdown from "../components/eval/EvaluationBreakdown";
+import FailureAnalysis from "../components/eval/FailureAnalysis";
+import ReleaseReadiness from "../components/eval/ReleaseReadiness";
+import EvalDetailDrawer from "../components/eval/EvalDetailDrawer";
+import { BENCHMARK, EvalMetric } from "../lib/evalData";
+
+export default function EvaluationsPage() {
+  const [open, setOpen] = useState<EvalMetric | null>(null);
+
   return (
-    <div className="page">
-      <div className="page-head"><div><h1 className="page-title">Evaluations</h1>
-        <p className="page-sub">Fault-injection benchmark — 200 tasks, seed 42, real reproducible numbers.</p></div></div>
-      <div className="card"><h3>Benchmark results</h3>
-        <table className="mtable"><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody>
-          {rows.map(([k, v]) => (<tr key={k}><td>{k}</td><td className="mono"><b>{v}</b></td></tr>))}
-        </tbody></table>
-        <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>Honest finding: double-fault (hard) tasks escalate rather than recover, so recovery = 0.667. Run: <code>python -m benchmarks.run</code></p></div>
+    <div className="ev">
+      <div className="wrap">
+        <div className="head">
+          <div>
+            <h1 className="h1">Evaluations</h1>
+            <p className="h-sub">Measure agent reliability, safety, planning, recovery, and tool-use quality.</p>
+          </div>
+          <div className="head-actions">
+            <span className="badge-fi">Fault Injection · {BENCHMARK.tasks} tasks · seed {BENCHMARK.seed}</span>
+          </div>
+        </div>
+
+        <BenchmarkSummary />
+
+        <div className="sec-h">Benchmark Results</div>
+        <BenchmarkTable onOpen={setOpen} />
+
+        <div className="grid2" style={{ marginTop: 16 }}>
+          <div>
+            <div className="sec-h" style={{ marginTop: 0 }}>Breakdown</div>
+            <EvaluationBreakdown />
+          </div>
+          <div>
+            <div className="sec-h" style={{ marginTop: 0 }}>Failure Analysis</div>
+            <FailureAnalysis />
+          </div>
+        </div>
+
+        <div className="sec-h">Release Readiness</div>
+        <ReleaseReadiness />
+
+        <div className="grid2" style={{ marginTop: 16 }}>
+          <div className="card">
+            <div className="sec-h" style={{ margin: "0 0 10px" }}>Benchmark Quality</div>
+            <p className="note" style={{ marginTop: 0 }}>
+              {BENCHMARK.tasks} tasks · seed {BENCHMARK.seed} · fully reproducible. These are real
+              fault-injection results — recovery is honestly {`${(BENCHMARK.metrics.find((m) => m.id === "recovery")!.score * 100).toFixed(1)}`}%
+              because hard double-fault tasks escalate rather than recover. Reproduce with{" "}
+              <code>python -m benchmarks.run</code>.
+            </p>
+          </div>
+          <div className="card">
+            <div className="sec-h" style={{ margin: "0 0 10px" }}>Evaluation History</div>
+            <p className="note" style={{ marginTop: 0 }}>
+              No previous runs available. Run history isn’t stored via an API yet — when it is, this
+              panel will chart success/recovery trends across runs.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {open && <EvalDetailDrawer metric={open} onClose={() => setOpen(null)} />}
     </div>
   );
 }
