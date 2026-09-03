@@ -2,6 +2,7 @@
 
 Central, typed settings so the rest of the app never reads os.environ directly.
 """
+
 from functools import lru_cache
 
 from pydantic import Field
@@ -9,9 +10,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", extra="ignore"
-    )
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # App
     app_env: str = Field(default="dev")
@@ -75,6 +74,10 @@ class Settings(BaseSettings):
     report_evidence_first: bool = Field(default=True)
     # Fetch full page text for retrieved sources (deeper evidence than snippets).
     research_fetch_fulltext: bool = Field(default=True)
+    # LLM-plan focused, acronym-expanded search queries before retrieving.
+    research_query_planner: bool = Field(default=True)
+    research_max_queries: int = Field(default=4)  # planned queries per research step
+    research_max_sources: int = Field(default=14)  # merged sources kept per research step
 
 
 @lru_cache

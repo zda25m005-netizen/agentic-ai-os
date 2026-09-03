@@ -11,11 +11,14 @@ Design goals (why this exists):
 Reuses `app.exec.evidence` for source typing/credibility so we don't duplicate
 that logic. Pure and dependency-free: safe to build deterministically and test.
 """
+
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
+from urllib.parse import unquote
 
 from app.analysis.reliability import derive_published, score_source
 from app.exec.evidence import (
@@ -23,6 +26,40 @@ from app.exec.evidence import (
     assess_freshness,
     source_type_from_url,
 )
+
+
+def _academic_label(url: str) -> str:
+    """A clean identifier for an academic source lacking a title: arXiv:<id> / doi:<id>."""
+    low = url.lower()
+    m = re.search(r"arxiv\.org/(?:abs|pdf)/([0-9]+\.[0-9]+)", low)
+    if m:
+        return f"arXiv:{m.group(1)}"
+    m = re.search(r"doi\.org/(10\.[^\s?#]+)", url, re.I)
+    if m:
+        return f"doi:{m.group(1)}"
+    return ""
+
+
+def normalize_url(url: str) -> str:
+    """Canonical form for matching: lowercase host, drop arXiv version + trailing slash."""
+    u = (url or "").strip()
+    u = re.sub(r"(arxiv\.org/(?:abs|pdf)/[0-9]+\.[0-9]+)v[0-9]+", r"\1", u, flags=re.I)
+    return u.rstrip("/")
+
+
+def _title_from_url(url: str) -> str:
+    """A human-readable title from a URL slug, or '' when the slug is not word-like.
+
+    Word slugs (Wikipedia articles, doc pages) become a title so the relevance gate
+    can judge them; numeric/id slugs (arXiv ids, hashes) return '' so a real paper
+    without metadata is not falsely dropped as off-topic.
+    """
+    path = url.split("//")[-1].split("?")[0].split("#")[0].rstrip("/")
+    slug = path.split("/")[-1] if "/" in path else ""
+    slug = unquote(slug).replace("_", " ").replace("-", " ").strip()
+    if re.search(r"[A-Za-z]{3,}", slug) and not re.fullmatch(r"[\d.\s]+", slug):
+        return slug[:120]
+    return ""
 
 
 class StatementType(str, Enum):  # noqa: UP042
@@ -36,10 +73,10 @@ class StatementType(str, Enum):  # noqa: UP042
 
 
 class Verification(str, Enum):  # noqa: UP042
-    VERIFIED = "Verified"                 # >= 2 independent, agreeing sources
+    VERIFIED = "Verified"  # >= 2 independent, agreeing sources
     PARTIALLY_VERIFIED = "Partially verified"  # 1 credible source
-    CONFLICTING = "Conflicting"           # sources disagree
-    UNVERIFIED = "Unverified"             # no source
+    CONFLICTING = "Conflicting"  # sources disagree
+    UNVERIFIED = "Unverified"  # no source
 
 
 @dataclass
@@ -55,13 +92,13 @@ class ArtifactSource:
     source_type: str = "other"
     reliability: float = 0.4
     reliability_basis: str = "heuristic: source-type prior"
-    corroboration: float = 1.0   # cross-source agreement factor (refined in Phase 5)
+    corroboration: float = 1.0  # cross-source agreement factor (refined in Phase 5)
     authors: list[str] = field(default_factory=list)
     year: int | None = None
     venue: str = ""
-    snippet: str = ""            # retrieved content, used to gate topical relevance
-    relevance: float | None = None       # [0,1] vs the research question; None = unassessed
-    relevance_basis: str = ""            # transparent explanation of the relevance score
+    snippet: str = ""  # retrieved content, used to gate topical relevance
+    relevance: float | None = None  # [0,1] vs the research question; None = unassessed
+    relevance_basis: str = ""  # transparent explanation of the relevance score
 
     def enrich(self, meta: dict) -> None:
         """Attach real bibliographic metadata gathered during research."""
@@ -72,8 +109,11 @@ class ArtifactSource:
         self.snippet = str(meta.get("snippet") or self.snippet)
 
     def citation(self) -> str:
-        """A proper reference string when metadata exists, else the title/domain."""
+        """A proper reference string when metadata exists, else a clean id / domain."""
         title = self.title or self.publisher
+        # id-only academic sources with no captured title: show arXiv:<id> / doi:<id>
+        if not self.title or self.title == self.publisher:
+            title = _academic_label(self.url) or title
         if not self.authors:
             return f"{title}{f' ({self.year})' if self.year else ''}."
         lead = self.authors[0] + (" et al." if len(self.authors) > 1 else "")
@@ -82,24 +122,35 @@ class ArtifactSource:
         return f"{lead}{yr}. {title}.{ven}"
 
     @classmethod
-    def from_url(cls, sid: str, url: str, title: str = "",
-                 published: str | None = None) -> ArtifactSource:
+    def from_url(
+        cls, sid: str, url: str, title: str = "", published: str | None = None
+    ) -> ArtifactSource:
         st = source_type_from_url(url)
         dom = (url.split("//")[-1].split("/")[0]) if "//" in url else url
         published = published or derive_published(url)
         fresh = assess_freshness(published)
         reliability, basis = score_source(st.value, fresh, url)
+        # A word-like title derived from the URL slug makes an otherwise "unassessable"
+        # bare URL judgeable by the relevance gate (so off-topic pages like
+        # /wiki/The_Taming_of_the_Shrew can be dropped, not silently cited).
         return cls(
-            id=sid, url=url, title=title or dom, publisher=dom.removeprefix("www."),
-            published=published, retrieved=datetime.now(UTC).strftime("%Y-%m-%d"),
-            source_type=st.value, reliability=reliability, reliability_basis=basis,
+            id=sid,
+            url=url,
+            title=title or _title_from_url(url) or dom,
+            publisher=dom.removeprefix("www."),
+            published=published,
+            retrieved=datetime.now(UTC).strftime("%Y-%m-%d"),
+            source_type=st.value,
+            reliability=reliability,
+            reliability_basis=basis,
         )
 
     def rescore(self, corroboration: float) -> None:
         """Recompute reliability once cross-source corroboration is known (Phase 5)."""
         self.corroboration = corroboration
         self.reliability, self.reliability_basis = score_source(
-            self.source_type, self.freshness(), self.url, corroboration)
+            self.source_type, self.freshness(), self.url, corroboration
+        )
 
     @property
     def credibility(self) -> str:
@@ -121,7 +172,7 @@ class ArtifactClaim:
     source_ids: list[str] = field(default_factory=list)
     evidence: str = ""
     verification: Verification = Verification.UNVERIFIED
-    confidence: str = "Low"   # evidence confidence label (not a probability)
+    confidence: str = "Low"  # evidence confidence label (not a probability)
 
 
 @dataclass
@@ -133,7 +184,7 @@ class Metric:
     unit: str = ""
     entity: str = ""
     source_ids: list[str] = field(default_factory=list)
-    derivation: str = "reported"   # e.g. "reported" or "computed: (cur-prev)/prev*100"
+    derivation: str = "reported"  # e.g. "reported" or "computed: (cur-prev)/prev*100"
 
 
 @dataclass
@@ -154,7 +205,7 @@ class ArtifactFinding:
     interpretation: str = ""
     implication: str = ""
     evidence_ids: list[str] = field(default_factory=list)
-    confidence: str = "Medium"   # evidence confidence label
+    confidence: str = "Medium"  # evidence confidence label
 
 
 _CONF_RANK = {"High": 1.0, "Medium": 0.6, "Low": 0.3, "Analytical": 0.3}
@@ -175,7 +226,7 @@ class AnalysisArtifact:
     findings: list[ArtifactFinding] = field(default_factory=list)
     limitations: list[str] = field(default_factory=list)
     uncertainties: list[str] = field(default_factory=list)
-    dropped_sources: int = 0   # sources excluded by the relevance gate (off-topic)
+    dropped_sources: int = 0  # sources excluded by the relevance gate (off-topic)
 
     # --- construction helpers ---
 
@@ -211,12 +262,13 @@ class AnalysisArtifact:
             "reasoning_depth": round(len(reasoned) / n_find, 2),
             "citation_completeness": round(len(supported) / n_claims, 2),
             "note": "Heuristic evaluation metrics for observability; not calibrated "
-                    "probabilities and not shown in the user-facing report.",
+            "probabilities and not shown in the user-facing report.",
         }
 
     def reliability_of(self, claim: ArtifactClaim) -> float:
-        rels = [s.reliability for sid in claim.source_ids
-                if (s := self.source_by_id(sid)) is not None]
+        rels = [
+            s.reliability for sid in claim.source_ids if (s := self.source_by_id(sid)) is not None
+        ]
         return max(rels) if rels else 0.0
 
     # --- what the LLM writing layer is allowed to see ---
@@ -228,20 +280,50 @@ class AnalysisArtifact:
             "mission_type": self.mission_type,
             "entities": self.entities,
             "dimensions": self.dimensions,
-            "sources": [{"id": s.id, "title": s.title, "url": s.url,
-                         "type": s.source_type, "reliability": s.reliability}
-                        for s in self.sources],
-            "claims": [{"id": c.id, "statement": c.statement, "type": c.statement_type.value,
-                        "entity": c.entity, "sources": c.source_ids,
-                        "verification": c.verification.value, "confidence": c.confidence}
-                       for c in self.claims],
-            "metrics": [{"name": m.name, "value": m.value, "unit": m.unit,
-                         "entity": m.entity, "sources": m.source_ids,
-                         "derivation": m.derivation} for m in self.metrics],
-            "findings": [{"id": f.id, "observation": f.observation,
-                          "interpretation": f.interpretation, "implication": f.implication,
-                          "evidence": f.evidence_ids, "confidence": f.confidence}
-                         for f in self.findings],
+            "sources": [
+                {
+                    "id": s.id,
+                    "title": s.title,
+                    "url": s.url,
+                    "type": s.source_type,
+                    "reliability": s.reliability,
+                }
+                for s in self.sources
+            ],
+            "claims": [
+                {
+                    "id": c.id,
+                    "statement": c.statement,
+                    "type": c.statement_type.value,
+                    "entity": c.entity,
+                    "sources": c.source_ids,
+                    "verification": c.verification.value,
+                    "confidence": c.confidence,
+                }
+                for c in self.claims
+            ],
+            "metrics": [
+                {
+                    "name": m.name,
+                    "value": m.value,
+                    "unit": m.unit,
+                    "entity": m.entity,
+                    "sources": m.source_ids,
+                    "derivation": m.derivation,
+                }
+                for m in self.metrics
+            ],
+            "findings": [
+                {
+                    "id": f.id,
+                    "observation": f.observation,
+                    "interpretation": f.interpretation,
+                    "implication": f.implication,
+                    "evidence": f.evidence_ids,
+                    "confidence": f.confidence,
+                }
+                for f in self.findings
+            ],
             "limitations": self.limitations,
             "uncertainties": self.uncertainties,
         }

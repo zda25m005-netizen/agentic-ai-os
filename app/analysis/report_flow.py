@@ -8,6 +8,7 @@ claims. The result is repaired + validated before rendering, so the pipeline
 never ships an unsupported report. A bad or missing LLM leaves a fully valid
 deterministic report.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -17,6 +18,7 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
 from app.analysis.artifact import AnalysisArtifact
+from app.analysis.decision import derive_decision
 from app.analysis.pipeline import build_analysis_artifact
 from app.analysis.scoring import _mentions, _polarity, score_artifact
 from app.analysis.to_report import artifact_to_report
@@ -79,7 +81,10 @@ _SYS_REASONING = (
     "layer and data flow and why NOT put everything in one mechanism. "
     "decision_rationale: [{requirement, decision, reason}]. "
     "reasoning: [{finding_id, interpretation, implication}] keyed to the given finding "
-    "ids." + _RULES
+    "ids. "
+    "CRITICAL: your recommendation MUST be consistent with the provided 'decision' "
+    "(same recommended option(s) and the same confidence level); explain that decision, "
+    "do not substitute a different pick." + _RULES
 )
 
 
@@ -105,42 +110,58 @@ def _apply_synthesis(art: AnalysisArtifact, data: dict) -> None:
             f.implication = str(r.get("implication", "")).strip()
 
 
-def _evidence_bundles(art: AnalysisArtifact) -> list[dict]:
+def _evidence_bundles(art: AnalysisArtifact, esc) -> list[dict]:
     """Per-option grounded evidence: claims (+verification/refs), scores, counter-evidence.
 
     Feeding each synthesis call the specific evidence for the option it is writing
     about forces grounded, specific prose instead of generic filler.
     """
-    esc = score_artifact(art)
     ref_of = {s.id: i + 1 for i, s in enumerate(art.sources)}
-    ewords = {e: {w for w in re.findall(r"[a-z0-9]+", e.lower()) if len(w) > 2}
-              for e in art.entities}
+    ewords = {
+        e: {w for w in re.findall(r"[a-z0-9]+", e.lower()) if len(w) > 2} for e in art.entities
+    }
     bundles = []
     for e in art.entities:
         claims = [c for c in art.claims if _mentions(c, e, ewords[e])]
-        bundles.append({
-            "option": e,
-            "claims": [{
-                "statement": c.statement.strip()[:240],
-                "verification": c.verification.value, "confidence": c.confidence,
-                "refs": sorted({ref_of[s] for s in c.source_ids if s in ref_of}),
-            } for c in claims][:8],
-            "counter_evidence": [c.statement.strip()[:200] for c in claims
-                                 if _polarity(c.statement) < 0][:4],
-            "scores": [{"criterion": cell.criterion, "score": cell.score,
-                        "supporting": cell.supporting, "contradicting": cell.contradicting,
-                        "confidence": cell.confidence}
-                       for cell in esc.cells if cell.entity == e],
-        })
+        bundles.append(
+            {
+                "option": e,
+                "claims": [
+                    {
+                        "statement": c.statement.strip()[:240],
+                        "verification": c.verification.value,
+                        "confidence": c.confidence,
+                        "refs": sorted({ref_of[s] for s in c.source_ids if s in ref_of}),
+                    }
+                    for c in claims
+                ][:8],
+                "counter_evidence": [
+                    c.statement.strip()[:200] for c in claims if _polarity(c.statement) < 0
+                ][:4],
+                "scores": [
+                    {
+                        "criterion": cell.criterion,
+                        "score": cell.score,
+                        "supporting": cell.supporting,
+                        "contradicting": cell.contradicting,
+                        "confidence": cell.confidence,
+                    }
+                    for cell in esc.cells
+                    if cell.entity == e
+                ],
+            }
+        )
     return bundles
 
 
 async def _call(chat_fn: ChatFn, system: str, payload: dict) -> dict:
     try:
-        raw = await chat_fn([
-            {"role": "system", "content": system},
-            {"role": "user", "content": json.dumps(payload)[:8000]},
-        ])
+        raw = await chat_fn(
+            [
+                {"role": "system", "content": system},
+                {"role": "user", "content": json.dumps(payload)[:8000]},
+            ]
+        )
         return _parse(raw)
     except Exception:
         return {}
@@ -155,11 +176,17 @@ async def synthesize_over_artifact(art: AnalysisArtifact, chat_fn: ChatFn) -> di
     call that fails just contributes nothing.
     """
     ctx = art.to_llm_context()
-    bundles = _evidence_bundles(art)
+    esc = score_artifact(art)
+    bundles = _evidence_bundles(art, esc)
+    decision = derive_decision(art, esc).as_dict()
     findings = [{"id": f.id, "observation": f.observation} for f in art.findings]
-    reason_ctx = {"objective": art.objective, "options": bundles,
-                  "findings": findings,
-                  "note": "Scores and decision are fixed upstream; explain, do not change."}
+    reason_ctx = {
+        "objective": art.objective,
+        "options": bundles,
+        "findings": findings,
+        "decision": decision,
+        "note": "Scores and decision are fixed upstream; explain, do not change.",
+    }
 
     narrative, approaches, reasoning = await asyncio.gather(
         _call(chat_fn, _SYS_NARRATIVE, ctx),
@@ -174,7 +201,9 @@ async def synthesize_over_artifact(art: AnalysisArtifact, chat_fn: ChatFn) -> di
 
 
 async def build_report_evidence_first(
-    mission: Mission, tasks: list[Task], chat_fn: ChatFn | None = None,
+    mission: Mission,
+    tasks: list[Task],
+    chat_fn: ChatFn | None = None,
 ) -> Report:
     """Assemble the artifact, let the LLM write over it, then repair + return."""
     art = build_analysis_artifact(mission, tasks)
@@ -185,7 +214,7 @@ async def build_report_evidence_first(
             synth = await synthesize_over_artifact(art, chat_fn)
             _apply_synthesis(art, synth)
         except Exception:
-            synth = {}   # a bad LLM response must never break the report
+            synth = {}  # a bad LLM response must never break the report
 
     status = (mission.meta or {}).get("status", "Completed")
     date = datetime.now(UTC).strftime("%d %B %Y")
@@ -203,16 +232,21 @@ async def build_report_evidence_first(
         synth.pop("scorecard", None)
         synth.pop("scoring_rationale", None)
         _synthesize_into(report, synth)
-    report.executive_summary = (synth.get("executive_summary") or "").strip() \
-        or _default_summary(mission.objective, len(art.findings))
+    report.executive_summary = (synth.get("executive_summary") or "").strip() or _default_summary(
+        mission.objective, len(art.findings)
+    )
     report.problem_definition = (synth.get("problem_definition") or "").strip()
     report.bottom_line = (synth.get("bottom_line") or "").strip()
     chains = synth.get("reasoning_chains")
     if isinstance(chains, list):
         report.reasoning_chains = [
-            {k: str(c.get(k, "")) for k in ("claim", "evidence", "reasoning",
-                                            "trade_off", "counter", "decision")}
-            for c in chains if isinstance(c, dict) and c.get("claim")][:8]
+            {
+                k: str(c.get(k, ""))
+                for k in ("claim", "evidence", "reasoning", "trade_off", "counter", "decision")
+            }
+            for c in chains
+            if isinstance(c, dict) and c.get("claim")
+        ][:8]
 
     def _dicts(key: str, fields: tuple[str, ...], req: str, limit: int = 8) -> list[dict]:
         v = synth.get(key)
@@ -221,13 +255,18 @@ async def build_report_evidence_first(
         out = []
         for d in v:
             if isinstance(d, dict) and d.get(req):
-                out.append({f: (d.get(f) if isinstance(d.get(f), list) else str(d.get(f, "")))
-                            for f in fields})
+                out.append(
+                    {
+                        f: (d.get(f) if isinstance(d.get(f), list) else str(d.get(f, "")))
+                        for f in fields
+                    }
+                )
         return out[:limit]
 
     report.key_insights = _dicts("key_insights", ("insight", "confidence"), "insight", 6)
     report.evidence_summary = _dicts(
-        "evidence_summary", ("finding", "strength", "confidence"), "finding")
+        "evidence_summary", ("finding", "strength", "confidence"), "finding"
+    )
     report.trade_offs = _dicts("trade_offs", ("entity", "pros", "cons"), "entity", 5)
     # scoring_rationale is evidence-derived in artifact_to_report; do not overwrite.
     dc = synth.get("decision_change")
@@ -240,7 +279,8 @@ async def build_report_evidence_first(
     if not report.recommendation.strip() and dec.get("summary"):
         report.recommendation = (
             f"{dec['summary']} Confidence: {dec.get('confidence', 'Low')} "
-            f"(grounded in {dec.get('evidence_count', 0)} validated source(s)).")
+            f"(grounded in {dec.get('evidence_count', 0)} validated source(s))."
+        )
 
     repair_report(report)
     return report

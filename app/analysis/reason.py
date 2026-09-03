@@ -9,6 +9,7 @@ they are the LLM's job in the synthesis step (Phase 9), and it may only reason
 over these observations, never invent new facts. Ordering surfaces the
 best-supported topics first.
 """
+
 from __future__ import annotations
 
 from app.analysis.artifact import (
@@ -20,8 +21,12 @@ from app.analysis.artifact import (
 )
 
 _GROUNDED = {StatementType.FACT, StatementType.OBSERVATION}
-_VERIF_RANK = {Verification.VERIFIED: 3, Verification.PARTIALLY_VERIFIED: 2,
-               Verification.CONFLICTING: 1, Verification.UNVERIFIED: 0}
+_VERIF_RANK = {
+    Verification.VERIFIED: 3,
+    Verification.PARTIALLY_VERIFIED: 2,
+    Verification.CONFLICTING: 1,
+    Verification.UNVERIFIED: 0,
+}
 _CONF_RANK = {"High": 3, "Medium": 2, "Low": 1, "Analytical": 1}
 
 
@@ -49,13 +54,30 @@ def _confidence(claims: list[ArtifactClaim]) -> str:
     return {3: "High", 2: "Medium"}.get(best, "Low")
 
 
-def generate_findings(artifact: AnalysisArtifact, max_findings: int = 6) -> list[ArtifactFinding]:
-    """Build grounded finding skeletons from evidence-backed factual claims."""
+def _group(artifact: AnalysisArtifact, require_source: bool) -> dict[str, list[ArtifactClaim]]:
     groups: dict[str, list[ArtifactClaim]] = {}
     for c in artifact.claims:
-        if c.source_ids and c.statement_type in _GROUNDED \
-                and c.verification != Verification.CONFLICTING:
+        if (
+            c.statement_type in _GROUNDED
+            and c.verification != Verification.CONFLICTING
+            and (c.source_ids or not require_source)
+        ):
             groups.setdefault(_topic(c), []).append(c)
+    return groups
+
+
+def generate_findings(artifact: AnalysisArtifact, max_findings: int = 6) -> list[ArtifactFinding]:
+    """Build grounded finding skeletons from factual claims.
+
+    Prefers source-backed claims. If evidence is thin (e.g. every retrieved source
+    was dropped as off-topic), it still builds findings from the researcher's
+    grounded claims so the evidence-first report stands on its own rather than
+    collapsing to the legacy path — those findings simply carry Low/Unverified
+    confidence, which is honest.
+    """
+    groups = _group(artifact, require_source=True)
+    if len(groups) < 2:
+        groups = _group(artifact, require_source=False)
 
     def support(claims: list[ArtifactClaim]) -> tuple:
         best_verif = max((_VERIF_RANK.get(c.verification, 0) for c in claims), default=0)
@@ -64,13 +86,15 @@ def generate_findings(artifact: AnalysisArtifact, max_findings: int = 6) -> list
     ranked = sorted(groups.values(), key=support, reverse=True)[:max_findings]
     findings: list[ArtifactFinding] = []
     for i, claims in enumerate(ranked, 1):
-        findings.append(ArtifactFinding(
-            id=f"F{i}",
-            observation=_observation(claims),
-            interpretation="",   # filled by the LLM synthesis step, over this evidence only
-            implication="",
-            evidence_ids=[c.id for c in claims],
-            confidence=_confidence(claims),
-        ))
+        findings.append(
+            ArtifactFinding(
+                id=f"F{i}",
+                observation=_observation(claims),
+                interpretation="",  # filled by the LLM synthesis step, over this evidence only
+                implication="",
+                evidence_ids=[c.id for c in claims],
+                confidence=_confidence(claims),
+            )
+        )
     artifact.findings = findings
     return findings

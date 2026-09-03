@@ -9,6 +9,7 @@ regenerated with the critic's feedback (a bounded replan loop). It's a
 no other change — the same tick that budgets, routes, and recovers now also runs
 a self-critiquing multi-agent step.
 """
+
 from __future__ import annotations
 
 import json
@@ -24,6 +25,7 @@ from app.missions.repository import MissionRepository
 from app.tools import wikipedia
 from app.tools.deep_search import deep_research
 from app.tools.fetch_extract import enrich_sources
+from app.tools.query_planner import plan_queries
 
 ChatFn = Callable[[list[dict]], Awaitable[str]]
 SearchFn = Callable[[str], Awaitable[list[dict]]]
@@ -43,8 +45,9 @@ async def default_search(query: str, max_results: int = 4) -> list[dict]:
         try:
             results = await enrich_sources(results, limit=8)
         except Exception:
-            pass   # enrichment must never break a research step
+            pass  # enrichment must never break a research step
     return results
+
 
 ROLE_PROMPTS: dict[str, str] = {
     "researcher": (
@@ -77,14 +80,91 @@ _OBJ_RE = re.compile(r"\{.*\}", re.DOTALL)
 
 # --- topic-drift detection (deterministic, LLM-free) ---
 _STOP = {
-    "the", "a", "an", "and", "or", "but", "for", "nor", "of", "to", "in", "on", "at",
-    "by", "with", "from", "as", "is", "are", "was", "were", "be", "been", "being",
-    "this", "that", "these", "those", "it", "its", "their", "our", "your", "you",
-    "we", "they", "he", "she", "them", "his", "her", "which", "who", "whom", "what",
-    "how", "why", "when", "where", "into", "over", "under", "than", "then", "also",
-    "can", "could", "should", "would", "will", "may", "might", "must", "do", "does",
-    "did", "not", "no", "yes", "all", "any", "each", "more", "most", "some", "such",
-    "using", "use", "used", "via", "per", "about", "across", "between", "given",
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "but",
+    "for",
+    "nor",
+    "of",
+    "to",
+    "in",
+    "on",
+    "at",
+    "by",
+    "with",
+    "from",
+    "as",
+    "is",
+    "are",
+    "was",
+    "were",
+    "be",
+    "been",
+    "being",
+    "this",
+    "that",
+    "these",
+    "those",
+    "it",
+    "its",
+    "their",
+    "our",
+    "your",
+    "you",
+    "we",
+    "they",
+    "he",
+    "she",
+    "them",
+    "his",
+    "her",
+    "which",
+    "who",
+    "whom",
+    "what",
+    "how",
+    "why",
+    "when",
+    "where",
+    "into",
+    "over",
+    "under",
+    "than",
+    "then",
+    "also",
+    "can",
+    "could",
+    "should",
+    "would",
+    "will",
+    "may",
+    "might",
+    "must",
+    "do",
+    "does",
+    "did",
+    "not",
+    "no",
+    "yes",
+    "all",
+    "any",
+    "each",
+    "more",
+    "most",
+    "some",
+    "such",
+    "using",
+    "use",
+    "used",
+    "via",
+    "per",
+    "about",
+    "across",
+    "between",
+    "given",
 }
 _WORD = re.compile(r"[A-Za-z][A-Za-z0-9+_-]{2,}")
 
@@ -108,7 +188,10 @@ def _salient(text: str) -> set[str]:
 
 
 def detect_topic_drift(
-    objective: str, description: str, output: str, min_overlap: float = 0.12,
+    objective: str,
+    description: str,
+    output: str,
+    min_overlap: float = 0.12,
 ) -> DriftVerdict:
     """Flag output that shares almost none of the mission's key terms (off-topic).
 
@@ -123,7 +206,8 @@ def detect_topic_drift(
     if overlap < min_overlap:
         top = ", ".join(sorted(key, key=len, reverse=True)[:6])
         return DriftVerdict(
-            True, overlap,
+            True,
+            overlap,
             f"Output shares only {overlap:.0%} of the mission's key terms; expected "
             f"content about: {top}.",
         )
@@ -150,10 +234,12 @@ class Critic:
 
     async def review(self, description: str, output: str, objective: str = "") -> Verdict:
         ctx = f"Mission objective: {objective}\n\n" if objective else ""
-        raw = await self._chat([
-            {"role": "system", "content": _CRITIC_SYSTEM},
-            {"role": "user", "content": f"{ctx}Task: {description}\n\nAnswer:\n{output}"},
-        ])
+        raw = await self._chat(
+            [
+                {"role": "system", "content": _CRITIC_SYSTEM},
+                {"role": "user", "content": f"{ctx}Task: {description}\n\nAnswer:\n{output}"},
+            ]
+        )
         data = _parse_obj(raw)
         if data is None:  # never block progress on a malformed judge response
             return Verdict(accepted=True, score=1.0, feedback="")
@@ -181,25 +267,46 @@ class MultiAgentExecutor:
         self._search = search_fn  # None -> no live search (offline/CI default)
 
     async def _generate(
-        self, role: str, description: str, feedback: str = "", context: str = "",
+        self,
+        role: str,
+        description: str,
+        feedback: str = "",
+        context: str = "",
     ) -> str:
         system = ROLE_PROMPTS.get(role, ROLE_PROMPTS[DEFAULT_ROLE])
         user = description
         if context:
-            user = (f"{description}\n\nWeb search results (ground your answer in these "
-                    f"and cite the URLs you use):\n{context}")
+            user = (
+                f"{description}\n\nWeb search results (ground your answer in these "
+                f"and cite the URLs you use):\n{context}"
+            )
         if feedback:
             user = f"{user}\n\nReviewer feedback to address:\n{feedback}"
-        return (await self._chat([
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ])).strip()
+        return (
+            await self._chat(
+                [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ]
+            )
+        ).strip()
 
     async def _research(self, query: str) -> tuple[str, list[str], list[dict]]:
-        """Run web search; return (context, source URLs, raw source dicts)."""
+        """Plan focused queries, search each, merge; return (context, urls, raw dicts)."""
         if self._search is None:
             return "", [], []
-        results = await self._search(query)
+        s = get_settings()
+        chat = self._chat if s.research_query_planner else None
+        queries = await plan_queries(query, chat, max_queries=s.research_max_queries)
+        results: list[dict] = []
+        seen: set[str] = set()
+        for q in queries:
+            for r in await self._search(q):
+                url = (r.get("url") or "").strip()
+                if url and url not in seen:
+                    seen.add(url)
+                    results.append(r)
+        results = results[: s.research_max_sources]
         ctx, urls = [], []
         for r in results:
             url = (r.get("url") or "").strip()
@@ -220,14 +327,18 @@ class MultiAgentExecutor:
             for r in results:
                 u = (r.get("url") or "").strip()
                 if u:
-                    by_url[u] = {"url": u, "title": r.get("title", ""),
-                                 "authors": r.get("authors") or [], "year": r.get("year"),
-                                 "venue": r.get("venue") or "",
-                                 "snippet": (r.get("snippet") or "")[:1500]}
+                    by_url[u] = {
+                        "url": u,
+                        "title": r.get("title", ""),
+                        "authors": r.get("authors") or [],
+                        "year": r.get("year"),
+                        "venue": r.get("venue") or "",
+                        "snippet": (r.get("snippet") or "")[:1500],
+                    }
             meta["sources"] = list(by_url.values())
             await self._repo.update_meta(mission_id, meta)
         except Exception:
-            pass   # telemetry must never break execution
+            pass  # telemetry must never break execution
 
     async def _record_flag(self, mission_id: int, task_id: int, note: str) -> None:
         """Persist a critic flag onto the mission meta (best-effort, race-tolerant)."""
@@ -250,8 +361,7 @@ class MultiAgentExecutor:
         # Researcher tasks gather real sources via web search before answering.
         context, urls = ("", [])
         if role == "researcher":
-            context, urls, results = await self._research(
-                f"{objective} {task.description}".strip())
+            context, urls, results = await self._research(f"{objective} {task.description}".strip())
             await self._persist_sources(task.mission_id, results)
 
         output = await self._generate(role, task.description, context=context)
@@ -262,10 +372,14 @@ class MultiAgentExecutor:
         if drift.drifted:
             await self._record_flag(task.mission_id, task.id, drift.note)
             output = await self._generate(
-                role, task.description, context=context,
-                feedback=(f"Your previous answer drifted off-topic. It MUST directly "
-                          f"address the mission objective: {objective}. {drift.note} "
-                          f"Rewrite it to focus only on the objective."),
+                role,
+                task.description,
+                context=context,
+                feedback=(
+                    f"Your previous answer drifted off-topic. It MUST directly "
+                    f"address the mission objective: {objective}. {drift.note} "
+                    f"Rewrite it to focus only on the objective."
+                ),
             )
 
         # Quality critic loop (bounded replans).
@@ -276,7 +390,8 @@ class MultiAgentExecutor:
             if verdict.accepted:
                 break
             output = await self._generate(
-                role, task.description, context=context, feedback=verdict.feedback)
+                role, task.description, context=context, feedback=verdict.feedback
+            )
 
         # Guarantee the real sources are present for the report's evidence ledger.
         if urls:
@@ -293,8 +408,10 @@ def build_executor(repo: MissionRepository, chat_fn: ChatFn | None = None) -> Ta
     if s.multi_agent_enabled:
         search_fn = None
         if s.research_enabled:
+
             async def search_fn(q: str) -> list[dict]:
                 return await default_search(q, max_results=s.research_max_results)
+
         return MultiAgentExecutor(
             repo,
             chat_fn=chat_fn,

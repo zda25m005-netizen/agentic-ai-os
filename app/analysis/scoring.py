@@ -9,6 +9,7 @@ supporting/contradicting counts and an evidence-confidence label. The number is
 then explainable — "3 supporting / 1 contradicting, Medium confidence" — and
 cannot be inflated beyond what the evidence supports. Fully deterministic.
 """
+
 from __future__ import annotations
 
 import re
@@ -18,49 +19,162 @@ from app.analysis.artifact import AnalysisArtifact, ArtifactClaim, confidence_fr
 
 # criterion -> terms that indicate a claim is *about* that criterion
 _CRITERIA: dict[str, set[str]] = {
-    "Relevance": {"relevan", "accura", "ground", "faithful", "factual", "quality",
-                  "precision", "recall", "correct", "context", "retriev", "fresh",
-                  "knowledge", "hallucinat", "up-to-date", "current"},
-    "Efficiency": {"efficien", "cost", "cheap", "expensive", "latenc", "fast", "slow",
-                   "comput", "resource", "overhead", "train", "inference", "speed",
-                   "budget", "memory", "gpu"},
-    "Scalability": {"scal", "throughput", "large", "grow", "volume", "corpus", "index",
-                    "storage", "footprint", "capacity", "concurrent", "billion"},
-    "Maintainability": {"maintain", "updat", "complex", "simple", "operational",
-                        "deploy", "monitor", "debug", "reproduc", "governance"},
+    "Relevance": {
+        "relevan",
+        "accura",
+        "ground",
+        "faithful",
+        "factual",
+        "quality",
+        "precision",
+        "recall",
+        "correct",
+        "context",
+        "retriev",
+        "fresh",
+        "knowledge",
+        "hallucinat",
+        "up-to-date",
+        "current",
+    },
+    "Efficiency": {
+        "efficien",
+        "cost",
+        "cheap",
+        "expensive",
+        "latenc",
+        "fast",
+        "slow",
+        "comput",
+        "resource",
+        "overhead",
+        "train",
+        "inference",
+        "speed",
+        "budget",
+        "memory",
+        "gpu",
+    },
+    "Scalability": {
+        "scal",
+        "throughput",
+        "large",
+        "grow",
+        "volume",
+        "corpus",
+        "index",
+        "storage",
+        "footprint",
+        "capacity",
+        "concurrent",
+        "billion",
+    },
+    "Maintainability": {
+        "maintain",
+        "updat",
+        "complex",
+        "simple",
+        "operational",
+        "deploy",
+        "monitor",
+        "debug",
+        "reproduc",
+        "governance",
+    },
 }
 _DEFAULT_CRITERIA = ["Relevance", "Efficiency", "Scalability"]
 
 # Word *stems* (matched with startswith) so "improves"/"scalable"/"expensive" all
 # hit. Bare "high"/"low" are deliberately omitted — their polarity depends on the
 # noun ("low latency" good, "low accuracy" bad) and is handled by phrase rules.
-_POS_STEMS = ("strong", "fast", "efficien", "robust", "accura", "effective",
-              "better", "best", "improv", "scalab", "scales", "fresh", "reliab",
-              "good", "superior", "advantag", "benefit", "lightweight", "flexib",
-              "power", "excellent", "easy", "simple", "precis", "ground", "faithful")
-_NEG_STEMS = ("weak", "poor", "slow", "expensiv", "costly", "limit", "fail",
-              "degrad", "overhead", "hard", "difficult", "brittle", "stale",
-              "unreliab", "bottleneck", "drawback", "disadvantag", "fragile",
-              "struggl", "lack", "hallucinat", "outdated", "error")
+_POS_STEMS = (
+    "strong",
+    "fast",
+    "efficien",
+    "robust",
+    "accura",
+    "effective",
+    "better",
+    "best",
+    "improv",
+    "scalab",
+    "scales",
+    "fresh",
+    "reliab",
+    "good",
+    "superior",
+    "advantag",
+    "benefit",
+    "lightweight",
+    "flexib",
+    "power",
+    "excellent",
+    "easy",
+    "simple",
+    "precis",
+    "ground",
+    "faithful",
+)
+_NEG_STEMS = (
+    "weak",
+    "poor",
+    "slow",
+    "expensiv",
+    "costly",
+    "limit",
+    "fail",
+    "degrad",
+    "overhead",
+    "hard",
+    "difficult",
+    "brittle",
+    "stale",
+    "unreliab",
+    "bottleneck",
+    "drawback",
+    "disadvantag",
+    "fragile",
+    "struggl",
+    "lack",
+    "hallucinat",
+    "outdated",
+    "error",
+)
 # phrase rules where a bare word would mislead ("low latency" is good, not bad)
 _GOOD_PHRASE = re.compile(
     r"\b(low|lower|reduc\w*|less|minimal|cheap\w*)\s+"
-    r"(latenc\w*|cost|compute|overhead|resource\w*|memory|footprint)", re.I)
+    r"(latenc\w*|cost|compute|overhead|resource\w*|memory|footprint)",
+    re.I,
+)
 _BAD_PHRASE = re.compile(
     r"\b(high|higher|more|increas\w*|greater|heavy|significant)\s+"
-    r"(latenc\w*|cost|compute|overhead|resource\w*|memory|footprint)", re.I)
-_NEGATORS = {"not", "no", "never", "cannot", "without", "hardly", "rarely",
-             "isn't", "doesn't", "won't", "don't", "n't"}
+    r"(latenc\w*|cost|compute|overhead|resource\w*|memory|footprint)",
+    re.I,
+)
+_NEGATORS = {
+    "not",
+    "no",
+    "never",
+    "cannot",
+    "without",
+    "hardly",
+    "rarely",
+    "isn't",
+    "doesn't",
+    "won't",
+    "don't",
+    "n't",
+}
 
 
 @dataclass
 class CriterionScore:
     entity: str
     criterion: str
-    score: float                 # 0-5, Laplace-smoothed from evidence polarity
+    score: float  # 0-5, Laplace-smoothed from evidence polarity
     supporting: int
     contradicting: int
-    confidence: str              # High | Medium | Low, from source count + quality
+    confidence: str  # High | Medium | Low, from source count + quality
     source_ids: list[str] = field(default_factory=list)
     rationale: str = ""
 
@@ -72,12 +186,15 @@ class EvidenceScorecard:
     cells: list[CriterionScore]
 
     def cell(self, entity: str, criterion: str) -> CriterionScore | None:
-        return next((c for c in self.cells
-                     if c.entity == entity and c.criterion == criterion), None)
+        return next(
+            (c for c in self.cells if c.entity == entity and c.criterion == criterion), None
+        )
 
     def matrix(self) -> dict[str, list[float]]:
-        return {e: [(self.cell(e, cr).score if self.cell(e, cr) else 2.5)
-                    for cr in self.criteria] for e in self.entities}
+        return {
+            e: [(self.cell(e, cr).score if self.cell(e, cr) else 2.5) for cr in self.criteria]
+            for e in self.entities
+        }
 
     def overall(self) -> dict[str, float]:
         m = self.matrix()
@@ -100,7 +217,7 @@ def _polarity(statement: str) -> int:
         is_neg = any(w.startswith(st) for st in _NEG_STEMS)
         if not (is_pos or is_neg):
             continue
-        if any(n in _NEGATORS for n in words[max(0, i - 3):i]):
+        if any(n in _NEGATORS for n in words[max(0, i - 3) : i]):
             is_pos, is_neg = is_neg, is_pos
         pos += is_pos
         neg += is_neg
@@ -116,8 +233,13 @@ def _polarity(statement: str) -> int:
 def _mentions(claim: ArtifactClaim, entity: str, ewords: set[str]) -> bool:
     if claim.entity and claim.entity.lower() == entity.lower():
         return True
-    s = claim.statement.lower()
-    return bool(ewords) and sum(w in s for w in ewords) / len(ewords) >= 0.5
+    if not ewords:
+        return False
+    # Strict attribution: a multi-word option ("Structured Memory") must have >=2 of
+    # its words in the claim, so a claim that merely mentions "memory" is not counted
+    # towards it (prevents scores bleeding across options).
+    shared = sum(w in claim.statement.lower() for w in ewords)
+    return shared >= 2 if len(ewords) >= 2 else shared >= 1
 
 
 def _about(statement: str, criterion: str) -> bool:
@@ -125,13 +247,11 @@ def _about(statement: str, criterion: str) -> bool:
     return any(k in s for k in _CRITERIA.get(criterion, set()))
 
 
-def score_artifact(art: AnalysisArtifact,
-                   criteria: list[str] | None = None) -> EvidenceScorecard:
+def score_artifact(art: AnalysisArtifact, criteria: list[str] | None = None) -> EvidenceScorecard:
     """Build an evidence-weighted scorecard from the artifact's claims."""
     entities = art.entities or []
     crits = criteria or [c for c in (art.dimensions or []) if c in _CRITERIA] or _DEFAULT_CRITERIA
-    ewords = {e: {w for w in re.findall(r"[a-z0-9]+", e.lower()) if len(w) > 2}
-              for e in entities}
+    ewords = {e: {w for w in re.findall(r"[a-z0-9]+", e.lower()) if len(w) > 2} for e in entities}
     rel_of = {s.id: s.reliability for s in art.sources}
 
     cells: list[CriterionScore] = []
@@ -160,9 +280,19 @@ def score_artifact(art: AnalysisArtifact,
                 conf = "Low"
                 rationale = "No direct evidence for this criterion; neutral prior."
             else:
-                rationale = (f"{sup} supporting / {con} contradicting claim(s) "
-                             f"across {len(sids)} source(s).")
-            cells.append(CriterionScore(
-                entity=e, criterion=cr, score=score, supporting=sup, contradicting=con,
-                confidence=conf, source_ids=sorted(sids), rationale=rationale))
+                rationale = (
+                    f"{sup} supporting / {con} contradicting claim(s) across {len(sids)} source(s)."
+                )
+            cells.append(
+                CriterionScore(
+                    entity=e,
+                    criterion=cr,
+                    score=score,
+                    supporting=sup,
+                    contradicting=con,
+                    confidence=conf,
+                    source_ids=sorted(sids),
+                    rationale=rationale,
+                )
+            )
     return EvidenceScorecard(criteria=crits, entities=entities, cells=cells)
