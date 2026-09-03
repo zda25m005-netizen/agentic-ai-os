@@ -1,4 +1,5 @@
 """FastAPI entrypoint. Endpoints grow through the roadmap."""
+
 import asyncio
 import logging
 import time
@@ -13,6 +14,7 @@ from pydantic import BaseModel
 import app.missions.models  # noqa: F401  (register mission tables on Base)
 from app.agents.graph import run_agent
 from app.api.anomaly import router as anomaly_router
+from app.api.jobs import router as jobs_router
 from app.api.missions import router as missions_router
 from app.api.reports import router as reports_router
 from app.core import auth, llm
@@ -32,6 +34,7 @@ from app.rag import citations, retriever, vectorstore
 settings = get_settings()
 logging_setup.configure_logging(settings.log_level)
 _access_log = logging.getLogger("agentic.access")
+
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
@@ -81,6 +84,7 @@ app.add_middleware(
 app.include_router(missions_router)
 app.include_router(anomaly_router)
 app.include_router(reports_router)
+app.include_router(jobs_router)
 # Versioned API surface (same routers under /v1) for stable clients.
 app.include_router(missions_router, prefix="/v1")
 app.include_router(anomaly_router, prefix="/v1")
@@ -236,9 +240,7 @@ def token(req: TokenRequest) -> TokenResponse:
     role = auth.verify_credentials(req.username, req.password)
     if role is None:
         raise HTTPException(status_code=401, detail="invalid credentials")
-    return TokenResponse(
-        access_token=auth.create_access_token(req.username, role=role), role=role
-    )
+    return TokenResponse(access_token=auth.create_access_token(req.username, role=role), role=role)
 
 
 @app.get("/me")
@@ -325,9 +327,7 @@ async def ask(req: AskRequest) -> AskResponse:
                 sources=[],
             )
         try:
-            answer = await llm.chat(
-                fusion.build_graphrag_messages(req.question, [], gctx.text)
-            )
+            answer = await llm.chat(fusion.build_graphrag_messages(req.question, [], gctx.text))
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(502, f"LLM call failed: {exc}") from exc
         return AskResponse(answer=answer, citations=[], sources=[])
@@ -396,8 +396,11 @@ async def feedback(req: FeedbackRequest) -> FeedbackResponse:
         )
     try:
         fid = await feedback_store.record(
-            req.query, req.answer, req.rating,
-            run_id=req.run_id, better_answer=req.better_answer,
+            req.query,
+            req.answer,
+            req.rating,
+            run_id=req.run_id,
+            better_answer=req.better_answer,
         )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(500, f"could not save feedback: {exc}") from exc
