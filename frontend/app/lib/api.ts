@@ -91,6 +91,26 @@ export const api = {
     req<MissionOut>(`/missions/${id}/pause`, { method: "POST" }),
   resume: (id: number) =>
     req<MissionOut>(`/missions/${id}/resume`, { method: "POST" }),
+  // Runtime introspection (public, read-only) — used by Observability/Agents.
+  config: () => req<RuntimeConfig>(`/config`),
+  readyz: () => req<Record<string, unknown>>(`/readyz`),
+  anomalyStatus: () => req<AnomalyStatus>(`/anomaly/status`),
+};
+
+export type RuntimeConfig = {
+  app_env?: string;
+  llm_model?: string;
+  embedding_model?: string;
+  qdrant_url?: string;
+  llm_key_configured?: boolean;
+  active_model?: string;
+};
+
+export type AnomalyStatus = {
+  model_available: boolean;
+  model?: string;
+  version?: string;
+  threshold?: number;
 };
 
 export const MISSION_STATUSES: MissionStatus[] = [
