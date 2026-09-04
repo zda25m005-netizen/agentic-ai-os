@@ -10,11 +10,14 @@ import JobDetailDrawer from "../../components/jobsearch/JobDetailDrawer";
 import CompareView from "../../components/jobsearch/CompareView";
 import AnalysisReport from "../../components/jobsearch/AnalysisReport";
 import SearchHistory from "../../components/jobsearch/SearchHistory";
+import ResumePanel from "../../components/jobsearch/ResumePanel";
+import ProfileDrawer from "../../components/jobsearch/ProfileDrawer";
 import {
   parseCriteria, runJobSearch, loadHistory, pushHistory,
   loadSaved, toggleSaved, computeInsights, constraintChips, resultCountText,
   JobListing, JobSearchResult, SearchHistoryEntry,
 } from "../../lib/jobSearch";
+import { getResume, ResumeState } from "../../lib/resumeApi";
 
 type Phase = "empty" | "searching" | "results";
 type Quick = "all" | "best" | "newest" | "salary" | "remote";
@@ -50,28 +53,32 @@ export default function JobSearchAgentPage() {
   const [openJob, setOpenJob] = useState<JobListing | null>(null);
   const [showCompare, setShowCompare] = useState(false);
   const [showReport, setShowReport] = useState(false);
+  const [resume, setResume] = useState<ResumeState | null>(null);
+  const [showProfile, setShowProfile] = useState(false);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => { setHistory(loadHistory()); setSaved(loadSaved()); }, []);
+  useEffect(() => { getResume().then(setResume).catch(() => setResume({ exists: false })); }, []);
   useEffect(() => () => { if (timer.current) clearInterval(timer.current); }, []);
 
   const criteria = useMemo(() => parseCriteria(query), [query]);
 
-  // A single search entry point. `expOverride` lets the experience filter re-run
-  // the search so experience stays a BACKEND hard constraint (not a display trick).
-  const search = async (expOverride?: string) => {
-    if (!query.trim() || phase === "searching") return;
-    const expValue = typeof expOverride === "string" ? expOverride : exp;
+  // Single search core taking an explicit query + experience, so callers
+  // (search button, experience filter, recommended-role chips) never fight a
+  // stale `query` closure. Experience stays a BACKEND hard constraint.
+  const runSearch = async (q: string, expValue: string) => {
+    if (!q.trim() || phase === "searching") return;
+    setQuery(q);
     setPhase("searching"); setError(null); setStep(0); setModify(false);
     const t0 = Date.now();
     timer.current = setInterval(() => setStep((s) => Math.min(s + 1, 4)), 550);
     try {
-      const r = await runJobSearch(query.trim(), expValue || undefined);
+      const r = await runJobSearch(q.trim(), expValue || undefined, !!resume?.exists);
       if (timer.current) clearInterval(timer.current);
       setStep(5);
       setResult(r);
       setTookMs(Date.now() - t0);
-      setHistory(pushHistory(query.trim(), constraintChips(r.constraints).join(" · ") || query.trim(), r.jobs.length));
+      setHistory(pushHistory(q.trim(), constraintChips(r.constraints).join(" · ") || q.trim(), r.jobs.length));
       setQuick("all"); setSort("match"); setView("all"); setText(""); setSelected(new Set()); setSelecting(false);
       setPhase("results");
     } catch (e) {
@@ -82,7 +89,10 @@ export default function JobSearchAgentPage() {
     }
   };
 
-  const changeExp = (v: string) => { setExp(v); search(v); };
+  const search = (expOverride?: string) =>
+    runSearch(query, typeof expOverride === "string" ? expOverride : exp);
+  const changeExp = (v: string) => { setExp(v); runSearch(query, v); };
+  const searchRole = (role: string) => runSearch(role, exp);
 
   const onSave = (j: JobListing) => setSaved(toggleSaved(j));
   const onSelect = (j: JobListing) => setSelected((prev) => {
@@ -101,14 +111,14 @@ export default function JobSearchAgentPage() {
       const q = text.toLowerCase();
       js = js.filter((j) => `${j.title} ${j.company} ${j.location ?? ""} ${j.skills.join(" ")}`.toLowerCase().includes(q));
     }
-    if (quick === "best") js = js.filter((j) => (j.matchScore ?? 0) >= 0.75);
+    if (quick === "best") js = js.filter((j) => ((j.candidateScore ?? j.matchScore) ?? 0) >= 0.75);
     else if (quick === "salary") js = js.filter((j) => j.salary);
     else if (quick === "remote") js = js.filter((j) => ["remote", "hybrid"].includes((j.workplaceType ?? "").toLowerCase()));
     else if (quick === "newest") js = js.filter((j) => j.postedAt && Date.now() - Date.parse(j.postedAt) < 14 * 864e5);
 
     const arr = [...js];
     arr.sort((a, b) => {
-      if (sort === "match") return (b.matchScore ?? 0) - (a.matchScore ?? 0);
+      if (sort === "match") return ((b.candidateScore ?? b.matchScore) ?? 0) - ((a.candidateScore ?? a.matchScore) ?? 0);
       if (sort === "company") return a.company.localeCompare(b.company);
       if (sort === "newest") return (b.postedAt ? Date.parse(b.postedAt) : 0) - (a.postedAt ? Date.parse(a.postedAt) : 0);
       const an = salaryNum(a), bn = salaryNum(b);
@@ -134,10 +144,25 @@ export default function JobSearchAgentPage() {
           </div>
         </div>
 
+        {/* YOUR PROFILE — resume-aware recommendations (optional) */}
+        <ResumePanel state={resume} onChange={setResume} onView={() => setShowProfile(true)} />
+
         {/* EMPTY */}
         {phase === "empty" && (
           <>
             <JobSearchInput value={query} onChange={setQuery} onSearch={search} searching={false} />
+            {resume?.exists && resume.profile && (resume.suggested_roles?.length ?? 0) > 0 && (
+              <>
+                <div className="sec-h">Recommended for you <span className="rec-sub">Based on your resume</span></div>
+                <div className="rec-roles">
+                  {resume.suggested_roles!.map((role) => (
+                    <button key={role} className="rec-chip" onClick={() => searchRole(role)}>
+                      {role} <Icon name="arrowRight" size={12} sw={2} />
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
             {history.length > 0 && (
               <>
                 <div className="sec-h">Recent searches</div>
@@ -358,6 +383,10 @@ export default function JobSearchAgentPage() {
       {showReport && result && (
         <AnalysisReport jobs={allJobs} criteria={criteria} sources={result.sources}
           onClose={() => setShowReport(false)} />
+      )}
+      {showProfile && resume?.profile && (
+        <ProfileDrawer profile={resume.profile} filename={resume.filename}
+          onClose={() => setShowProfile(false)} />
       )}
     </div>
   );

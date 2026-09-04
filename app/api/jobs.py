@@ -456,11 +456,12 @@ def parse_query(query: str) -> Constraints:
 class SearchRequest(BaseModel):
     query: str = ""
     limit: int = 200
+    experience: str | None = None  # explicit hard experience filter (e.g. "0-2")
+    use_resume: bool = False  # personalize ranking with the stored resume profile
     # legacy hints (ignored; query is authoritative) — kept for compatibility
     roles: list[str] = Field(default_factory=list)
     locations: list[str] = Field(default_factory=list)
     keywords: list[str] = Field(default_factory=list)
-    experience: str | None = None
     remote: bool = False
 
 
@@ -489,6 +490,12 @@ class JobItem(BaseModel):
     match_score: float | None = None
     match_breakdown: dict[str, float] = Field(default_factory=dict)
     sources: list[str] = Field(default_factory=list)
+    # resume-aware personalization (only populated when use_resume + a profile exist)
+    candidate_score: float | None = None
+    candidate_breakdown: dict[str, float] = Field(default_factory=dict)
+    matched_skills: list[str] = Field(default_factory=list)
+    missing_skills: list[str] = Field(default_factory=list)
+    match_reason: str | None = None
 
 
 class SourceStatus(BaseModel):
@@ -1110,6 +1117,8 @@ async def search_jobs(req: SearchRequest) -> JobSearchResponse:
     raw, sources = await gather_jobs(cons)
     deduped = dedup(raw)
     valid = validate_and_rank(deduped, cons, req.limit)
+    if req.use_resume:
+        valid = personalize_with_resume(valid)
     return JobSearchResponse(
         jobs=valid,
         sources=sources,
@@ -1117,3 +1126,32 @@ async def search_jobs(req: SearchRequest) -> JobSearchResponse:
         total_fetched=len(raw),
         total_after_filter=len(valid),
     )
+
+
+def personalize_with_resume(jobs: list[JobItem]) -> list[JobItem]:
+    """Attach candidate-match fields from the stored resume profile and re-rank
+    the ALREADY-VALID jobs by candidate fit. Never adds or removes jobs — the
+    query's hard constraints stay authoritative."""
+    from app.resume import store
+    from app.resume.match import score_candidate
+
+    rec = store.load_profile()
+    if not rec:
+        return jobs
+    profile = rec["profile"]
+    for j in jobs:
+        m = score_candidate(
+            profile,
+            job_skills=j.skills,
+            job_title=j.title,
+            job_exp_min=j.experience_min,
+            job_exp_max=j.experience_max,
+            job_country=j.country,
+        )
+        j.candidate_score = m["score"]
+        j.candidate_breakdown = m["breakdown"]
+        j.matched_skills = m["matched_skills"]
+        j.missing_skills = m["missing_skills"]
+        j.match_reason = m["reason"]
+    jobs.sort(key=lambda x: x.candidate_score or 0, reverse=True)
+    return jobs

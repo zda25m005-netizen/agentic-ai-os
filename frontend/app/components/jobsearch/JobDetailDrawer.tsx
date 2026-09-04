@@ -24,7 +24,33 @@ export default function JobDetailDrawer({ job, saved, onClose, onSave }: {
           <button className="head-link" onClick={onClose} aria-label="Close"><Icon name="x" size={16} /></button>
         </div>
 
-        {job.matchScore != null && (
+        {job.candidateScore != null ? (
+          <div className="matchbox">
+            <div className="mb-head"><span>Candidate match</span><b>{Math.round(job.candidateScore * 100)}%</b></div>
+            {Object.entries(job.candidateBreakdown).map(([k, v]) => (
+              <div className="mb-row" key={k}>
+                <span className="mb-k">{LABELS[k] || k}</span>
+                <span className="mb-bar"><span style={{ width: `${Math.round(v * 100)}%` }} /></span>
+                <span className="mb-v">{Math.round(v * 100)}%</span>
+              </div>
+            ))}
+            {job.matchReason && <div className="mb-note" style={{ marginTop: 8 }}>{job.matchReason}</div>}
+            {(job.matchedSkills.length > 0 || job.missingSkills.length > 0) && (
+              <div className="gaps">
+                {job.matchedSkills.length > 0 && (
+                  <div><span className="gap-lbl">Strong match</span>
+                    <span className="v" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {job.matchedSkills.map((s) => <span className="tagv hit" key={s}>{s}</span>)}</span></div>
+                )}
+                {job.missingSkills.length > 0 && (
+                  <div style={{ marginTop: 8 }}><span className="gap-lbl">Not demonstrated in resume</span>
+                    <span className="v" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {job.missingSkills.map((s) => <span className="tagv gap" key={s}>{s}</span>)}</span></div>
+                )}
+              </div>
+            )}
+          </div>
+        ) : job.matchScore != null && (
           <div className="matchbox">
             <div className="mb-head"><span>Why it matches</span><b>{Math.round(job.matchScore * 100)}%</b></div>
             {breakdown.length > 0 ? breakdown.map(([k, v]) => (

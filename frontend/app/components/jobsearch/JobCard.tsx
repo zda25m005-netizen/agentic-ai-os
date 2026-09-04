@@ -24,12 +24,23 @@ export default function JobCard({ job, saved, selected, selectable, onOpen, onSa
       <div className="job-main">
         <div className="job-top">
           <span className="job-title">{job.title}</span>
-          {job.matchScore != null && <span className="job-match">{Math.round(job.matchScore * 100)}% match</span>}
+          {job.candidateScore != null
+            ? <span className="job-match cand">{Math.round(job.candidateScore * 100)}% candidate match</span>
+            : job.matchScore != null && <span className="job-match">{Math.round(job.matchScore * 100)}% match</span>}
         </div>
         <div className="job-co">{job.company}{job.location ? ` · ${job.location}` : ""}</div>
         {meta.length > 0 && <div className="job-meta">{meta.map((m) => <span key={m}>{m}</span>)}</div>}
+        {job.candidateScore != null && job.matchReason && (
+          <div className="job-reason">{job.matchReason}</div>
+        )}
         {job.skills.length > 0 && (
-          <div className="job-skills">{job.skills.slice(0, 6).map((s) => <span className="tagv" key={s}>{s}</span>)}</div>
+          <div className="job-skills">
+            {job.skills.slice(0, 6).map((s) => (
+              <span className={`tagv ${job.candidateScore != null
+                ? (job.matchedSkills.map((x) => x.toLowerCase()).includes(s.toLowerCase()) ? "hit" : "gap")
+                : ""}`} key={s}>{s}</span>
+            ))}
+          </div>
         )}
         <div className="job-sub">
           <span className={`sal ${sal.kind}`}>{sal.text}</span>

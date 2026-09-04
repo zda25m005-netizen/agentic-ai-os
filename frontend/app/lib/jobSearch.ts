@@ -43,6 +43,12 @@ export interface JobListing {
   matchScore: number | null;         // 0..1 search relevance vs. criteria
   matchBreakdown: Record<string, number>;
   sources: string[];                 // provenance for deduped listings
+  // resume-aware personalization (present only when a resume is active)
+  candidateScore: number | null;
+  candidateBreakdown: Record<string, number>;
+  matchedSkills: string[];
+  missingSkills: string[];
+  matchReason: string | null;
 }
 
 export interface SourceStatus {
@@ -149,6 +155,8 @@ interface RawJob {
   salary: string | null; salary_type: string | null; skills: string[]; description: string;
   posted_at: string | null; source: string; source_url: string | null; application_url: string;
   match_score: number | null; match_breakdown: Record<string, number>; sources: string[];
+  candidate_score: number | null; candidate_breakdown: Record<string, number>;
+  matched_skills: string[]; missing_skills: string[]; match_reason: string | null;
 }
 interface RawConstraints {
   role: string | null; employment_type: string | null; country: string | null;
@@ -180,17 +188,22 @@ function toListing(r: RawJob): JobListing {
     skills: r.skills || [], description: r.description || "",
     postedAt: r.posted_at, source: r.source, sourceUrl: r.source_url, applicationUrl: r.application_url,
     matchScore: r.match_score, matchBreakdown: r.match_breakdown || {}, sources: r.sources || [r.source],
+    candidateScore: r.candidate_score ?? null, candidateBreakdown: r.candidate_breakdown || {},
+    matchedSkills: r.matched_skills || [], missingSkills: r.missing_skills || [], matchReason: r.match_reason ?? null,
   };
 }
 
 // The raw query is the source of truth — the backend parses + strictly validates.
 // `experience` (e.g. "0-2", "3-5", "6+") is an explicit hard constraint from the UI filter.
-export async function runJobSearch(query: string, experience?: string): Promise<JobSearchResult> {
+// `useResume` personalizes ranking with the stored profile (never changes hard filters).
+export async function runJobSearch(
+  query: string, experience?: string, useResume = false,
+): Promise<JobSearchResult> {
   const res = await fetch(`${API}/jobs/search`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     cache: "no-store",
-    body: JSON.stringify({ query, limit: 200, experience: experience || null }),
+    body: JSON.stringify({ query, limit: 200, experience: experience || null, use_resume: useResume }),
   });
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
