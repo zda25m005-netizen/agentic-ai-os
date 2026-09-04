@@ -91,8 +91,9 @@ export default function JobDetailDrawer({ job, saved, onClose, onSave }: {
           <button className={`btn ghost ${saved ? "saved" : ""}`} onClick={() => onSave(job)}>
             <Icon name={saved ? "bookmarkOn" : "bookmark"} size={14} /> {saved ? "Saved" : "Save Job"}
           </button>
-          <a className="btn primary" href={job.applicationUrl} target="_blank" rel="noreferrer noopener">
-            Apply on {job.source === "Greenhouse" || job.source === "Lever" ? "company site" : job.source} <Icon name="external" size={13} />
+          <a className="btn primary" href={job.applicationUrl} target="_blank" rel="noreferrer noopener"
+            title={job.applyDirect ? "Opens the employer/ATS application" : `Opens ${job.source} (aggregator)`}>
+            {job.applyDirect ? "Apply on company site" : `Apply via ${job.source}`} <Icon name="external" size={13} />
           </a>
         </div>
       </aside>

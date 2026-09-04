@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     adzuna_app_id: str = Field(default="")
     adzuna_app_key: str = Field(default="")
 
+    # Jooble job-search API (optional; free key at jooble.org/api/about). When set,
+    # adds a broad, country-aware aggregator source to the Job Search Agent.
+    jooble_api_key: str = Field(default="")
+
     # Serve a locally fine-tuned model (falls back to the API model if missing)
     use_finetuned: bool = Field(default=False)
     finetuned_model_dir: str = Field(default="artifacts/lora-adapter-merged")

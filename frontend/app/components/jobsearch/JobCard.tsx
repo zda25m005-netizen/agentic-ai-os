@@ -46,16 +46,20 @@ export default function JobCard({ job, saved, selected, selectable, onOpen, onSa
           <span className={`sal ${sal.kind}`}>{sal.text}</span>
           <span className="dot">·</span>
           <span>{postedLabel(job.postedAt)}</span>
+          {job.lastVerifiedAt && (<><span className="dot">·</span><span className="fresh">● Live · checked just now</span></>)}
         </div>
         <div className="job-foot">
           <span className="job-src">
-            {job.sources.length > 1 ? `${job.sources.length} sources` : `Source: ${job.source}`}
+            {job.sources.length > 1 ? `${job.sources.join(" · ")}` : `Source: ${job.source}`}
           </span>
           <button className={`btn ghost sm ${saved ? "saved" : ""}`} onClick={(e) => { e.stopPropagation(); onSave(job); }}>
             <Icon name={saved ? "bookmarkOn" : "bookmark"} size={13} /> {saved ? "Saved" : "Save"}
           </button>
           <a className="btn primary sm" href={job.applicationUrl} target="_blank" rel="noreferrer noopener"
-            onClick={(e) => e.stopPropagation()}>Apply <Icon name="arrowRight" size={13} sw={2} /></a>
+            title={job.applyDirect ? "Opens the employer/ATS application" : `Opens ${job.source} (aggregator)`}
+            onClick={(e) => e.stopPropagation()}>
+            {job.applyDirect ? "Apply" : `Apply via ${job.source}`} <Icon name="arrowRight" size={13} sw={2} />
+          </a>
         </div>
       </div>
     </div>

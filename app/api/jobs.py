@@ -538,9 +538,12 @@ class JobItem(BaseModel):
     skills: list[str] = Field(default_factory=list)
     description: str = ""
     posted_at: str | None = None
+    last_verified_at: str | None = None  # when this listing was last fetched live
+    job_type: str | None = None  # internship | full_time | part_time | contract
     source: str
     source_url: str | None = None
     application_url: str
+    apply_direct: bool = False  # True = employer/ATS page; False = aggregator redirect
     match_score: float | None = None
     match_breakdown: dict[str, float] = Field(default_factory=dict)
     sources: list[str] = Field(default_factory=list)
@@ -661,6 +664,20 @@ def _iso_date(value) -> str | None:
 
 def _intern_title(title: str) -> bool:
     return bool(re.search(r"\b(intern(ship)?|apprentice|working student|trainee)\b", title, re.I))
+
+
+def job_type_of(employment_type: str | None, title: str) -> str | None:
+    """Normalize to a first-class type: internship | part_time | contract | full_time."""
+    if _intern_title(title) or (employment_type or "").lower().startswith("intern"):
+        return "internship"
+    et = (employment_type or "").lower()
+    if "part" in et:
+        return "part_time"
+    if "contract" in et or "freelance" in et:
+        return "contract"
+    if et in ("full-time", "full time", "permanent") or "full" in et:
+        return "full_time"
+    return None
 
 
 # --------------------------------------------------------------------------- #
@@ -861,15 +878,24 @@ def compute_score(job: JobItem, cons: Constraints) -> tuple[float, dict[str, flo
 
 
 def dedup(jobs: list[JobItem]) -> list[JobItem]:
+    """Collapse the same role at the same company across sources. Merge source
+    provenance and prefer the DIRECT employer/ATS application URL over aggregators."""
     by_key: dict[tuple[str, str], JobItem] = {}
     for j in jobs:
         key = (j.company.lower().strip(), re.sub(r"\s+", " ", j.title.lower()).strip())
-        if key in by_key:
-            for s in j.sources:
-                if s not in by_key[key].sources:
-                    by_key[key].sources.append(s)
-        else:
+        keep = by_key.get(key)
+        if keep is None:
             by_key[key] = j
+            continue
+        for s in j.sources:
+            if s not in keep.sources:
+                keep.sources.append(s)
+        # upgrade to a direct application URL if this duplicate has one
+        if j.apply_direct and not keep.apply_direct:
+            keep.application_url = j.application_url
+            keep.apply_direct = True
+            keep.source_url = j.source_url
+            keep.source = j.source
     return list(by_key.values())
 
 
@@ -913,9 +939,11 @@ def normalize_greenhouse(raw: dict, company: str) -> JobItem | None:
         skills=extract_skills(body),
         description=summarize(body),
         posted_at=_iso_date(raw.get("updated_at") or raw.get("first_published")),
+        job_type=job_type_of("Internship" if _intern_title(title) else None, title),
         source="Greenhouse",
         source_url=url,
         application_url=url,
+        apply_direct=True,  # Greenhouse-hosted employer application page
         sources=["Greenhouse"],
     )
 
@@ -950,9 +978,13 @@ def normalize_lever(raw: dict, company: str) -> JobItem | None:
         skills=extract_skills(body),
         description=summarize(body),
         posted_at=_iso_date(raw.get("createdAt")),
+        job_type=job_type_of(
+            cats.get("commitment") or ("Internship" if _intern_title(title) else None), title
+        ),
         source="Lever",
         source_url=url,
         application_url=url,
+        apply_direct=True,  # Lever-hosted employer application page
         sources=["Lever"],
     )
 
@@ -1028,11 +1060,60 @@ def normalize_adzuna(raw: dict, cc: str) -> JobItem | None:
         skills=extract_skills(body),
         description=summarize(body),
         posted_at=_iso_date(raw.get("created")),
+        job_type=job_type_of(emp, title),
         source="Adzuna",
         source_url=url,
         application_url=url,
+        apply_direct=False,  # Adzuna redirect (aggregator) — not the employer page
         sources=["Adzuna"],
     )
+
+
+def normalize_jooble(raw: dict) -> JobItem | None:
+    title = (raw.get("title") or "").strip()
+    url = raw.get("link") or ""
+    if not title or not url:
+        return None
+    loc = (raw.get("location") or "").strip() or None
+    country, city, is_remote, worldwide = normalize_location(loc)
+    body = strip_html(raw.get("snippet") or "")
+    emn, emx, esen, edisp = job_experience_fields(title, body)
+    emp = "Internship" if _intern_title(title) else (raw.get("type") or None)
+    salary = (raw.get("salary") or "").strip() or None
+    return JobItem(
+        id=f"jb-{raw.get('id') or abs(hash(url))}",
+        title=title,
+        company=(raw.get("company") or "—").strip() or "—",
+        location=loc,
+        country=country,
+        city=city,
+        employment_type=emp,
+        experience=edisp,
+        experience_min=emn,
+        experience_max=emx,
+        seniority=esen,
+        workplace_type="Remote" if is_remote else None,
+        remote_worldwide=worldwide,
+        salary=salary,
+        salary_type="disclosed" if salary else None,
+        skills=extract_skills(body),
+        description=summarize(body),
+        posted_at=_iso_date(raw.get("updated")),
+        job_type=job_type_of(emp, title),
+        source="Jooble",
+        source_url=url,
+        application_url=url,
+        apply_direct=False,  # Jooble redirect (aggregator)
+        sources=["Jooble"],
+    )
+
+
+async def _fetch_jooble(c: httpx.AsyncClient, cons: Constraints, key: str) -> list[JobItem]:
+    body = {"keywords": _query_what(cons), "location": cons.city or cons.country or ""}
+    r = await c.post(f"https://jooble.org/api/{key}", json=body)
+    r.raise_for_status()
+    data = r.json()
+    return [j for j in (normalize_jooble(x) for x in data.get("jobs", [])) if j]
 
 
 async def _fetch_greenhouse(c: httpx.AsyncClient, token: str, name: str) -> list[JobItem]:
@@ -1050,10 +1131,19 @@ async def _fetch_lever(c: httpx.AsyncClient, handle: str, name: str) -> list[Job
     ]
 
 
+def _query_what(cons: Constraints) -> str:
+    """Keyword string sent to keyword-based providers. Broadens recall for
+    internships by adding 'intern'; strict employment filtering still applies."""
+    base = cons.role or cons.raw or ""
+    if cons.employment_type == "Internship" and "intern" not in base.lower():
+        base = f"{base} intern".strip()
+    return base[:100]
+
+
 async def _fetch_adzuna(
     c: httpx.AsyncClient, cc: str, cons: Constraints, app_id: str, app_key: str
 ) -> list[JobItem]:
-    what = cons.role or cons.raw
+    what = _query_what(cons)
     where = cons.city or cons.country or ""
     params = {
         "app_id": app_id,
@@ -1090,6 +1180,7 @@ async def gather_jobs(cons: Constraints) -> tuple[list[JobItem], list[SourceStat
     sources: list[SourceStatus] = []
     _s = get_settings()
     az_id, az_key = _s.adzuna_app_id, _s.adzuna_app_key
+    jooble_key = _s.jooble_api_key
 
     async with httpx.AsyncClient(
         timeout=12, headers={"user-agent": _UA}, follow_redirects=True
@@ -1107,6 +1198,11 @@ async def gather_jobs(cons: Constraints) -> tuple[list[JobItem], list[SourceStat
             az_results = await asyncio.gather(
                 *(_fetch_adzuna(client, cc, cons, az_id, az_key) for cc in codes),
                 return_exceptions=True,
+            )
+        jooble_result = None
+        if jooble_key:
+            jooble_result = await asyncio.gather(
+                _fetch_jooble(client, cons, jooble_key), return_exceptions=True
             )
 
     gh_ok = sum(1 for r in gh if not isinstance(r, Exception))
@@ -1153,6 +1249,27 @@ async def gather_jobs(cons: Constraints) -> tuple[list[JobItem], list[SourceStat
                 "country-scoped coverage (free key at developer.adzuna.com)",
             )
         )
+    if jooble_key:
+        jb_ok = jooble_result and not isinstance(jooble_result[0], Exception)
+        if jb_ok:
+            jobs.extend(jooble_result[0])
+        sources.append(
+            SourceStatus(
+                source="Jooble",
+                status="ok" if jb_ok else "error",
+                count=len(jooble_result[0]) if jb_ok else 0,
+                note="connected" if jb_ok else "unavailable",
+            )
+        )
+    else:
+        sources.append(
+            SourceStatus(
+                source="Jooble",
+                status="error",
+                count=0,
+                note="not configured — set JOOBLE_API_KEY (free key at jooble.org/api/about)",
+            )
+        )
     return jobs, sources
 
 
@@ -1175,6 +1292,10 @@ async def search_jobs(req: SearchRequest) -> JobSearchResponse:
     raw, sources = await gather_jobs(cons)
     deduped = dedup(raw)
     valid = validate_and_rank(deduped, cons, req.limit)
+    # Results came live from the source APIs at query time — honest freshness.
+    now = datetime.now(UTC).isoformat()
+    for j in valid:
+        j.last_verified_at = now
     if req.use_resume:
         valid = personalize_with_resume(valid)
     return JobSearchResponse(

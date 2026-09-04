@@ -37,9 +37,12 @@ export interface JobListing {
   skills: string[];
   description: string;
   postedAt: string | null;           // ISO date from the board, or null
+  lastVerifiedAt: string | null;     // when the listing was last fetched live
+  jobType: string | null;            // internship | full_time | part_time | contract
   source: string;
   sourceUrl: string | null;
   applicationUrl: string;            // original application URL (never fabricated)
+  applyDirect: boolean;              // true = employer/ATS page; false = aggregator
   matchScore: number | null;         // 0..1 search relevance vs. criteria
   matchBreakdown: Record<string, number>;
   sources: string[];                 // provenance for deduped listings
@@ -96,7 +99,8 @@ export function constraintChips(c: SearchConstraints): string[] {
 }
 
 export function resultCountText(c: SearchConstraints, n: number): string {
-  const word = n === 1 ? "job" : "jobs";
+  const intern = c.employmentType === "Internship";
+  const word = intern ? (n === 1 ? "internship" : "internships") : (n === 1 ? "job" : "jobs");
   const role = c.role ? `${c.role} ` : "";
   if (c.locationScope === "WORLDWIDE") return `${n} ${role}${word} found worldwide`;
   if (c.city) return `${n} ${role}${word} found in ${c.city}`;
@@ -173,7 +177,8 @@ interface RawJob {
   employment_type: string | null; experience: string | null; workplace_type: string | null;
   experience_min: number | null; experience_max: number | null; seniority: string | null;
   salary: string | null; salary_type: string | null; skills: string[]; description: string;
-  posted_at: string | null; source: string; source_url: string | null; application_url: string;
+  posted_at: string | null; last_verified_at: string | null; job_type: string | null;
+  source: string; source_url: string | null; application_url: string; apply_direct: boolean;
   match_score: number | null; match_breakdown: Record<string, number>; sources: string[];
   candidate_score: number | null; candidate_breakdown: Record<string, number>;
   matched_skills: string[]; missing_skills: string[]; match_reason: string | null;
@@ -206,7 +211,8 @@ function toListing(r: RawJob): JobListing {
     experienceMin: r.experience_min ?? null, experienceMax: r.experience_max ?? null, seniority: r.seniority ?? null,
     salary: r.salary, salaryType: (r.salary_type as JobListing["salaryType"]) ?? (r.salary ? "disclosed" : null),
     skills: r.skills || [], description: r.description || "",
-    postedAt: r.posted_at, source: r.source, sourceUrl: r.source_url, applicationUrl: r.application_url,
+    postedAt: r.posted_at, lastVerifiedAt: r.last_verified_at ?? null, jobType: r.job_type ?? null,
+    source: r.source, sourceUrl: r.source_url, applicationUrl: r.application_url, applyDirect: !!r.apply_direct,
     matchScore: r.match_score, matchBreakdown: r.match_breakdown || {}, sources: r.sources || [r.source],
     candidateScore: r.candidate_score ?? null, candidateBreakdown: r.candidate_breakdown || {},
     matchedSkills: r.matched_skills || [], missingSkills: r.missing_skills || [], matchReason: r.match_reason ?? null,

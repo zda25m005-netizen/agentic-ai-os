@@ -190,6 +190,7 @@
 .jsa .job-skills { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 9px; }
 .jsa .job-sub { display: flex; align-items: center; gap: 8px; margin-top: 9px; font-size: 12px; color: var(--htext2); }
 .jsa .job-sub .dot { color: var(--hmuted); }
+.jsa .fresh { color: #6FCf97; font-size: 11px; }
 .jsa .sal.disclosed { color: var(--hgreen); }
 .jsa .sal.estimated { color: #E0B457; }
 .jsa .sal.none { color: var(--hmuted); }

@@ -402,3 +402,109 @@ def test_filters_hard_filter_end_to_end():
     ]
     out = validate_and_rank(jobs, c, 50)
     assert [j.title for j in out] == ["HR Specialist"]
+
+
+# --- multi-source: apply-URL provenance, job_type, internships, dedup -------
+def test_job_type_of():
+    from app.api.jobs import job_type_of
+
+    assert job_type_of(None, "ML Engineer Intern") == "internship"
+    assert job_type_of("Part-time", "Barista") == "part_time"
+    assert job_type_of("Contract", "Consultant") == "contract"
+    assert job_type_of("Full-time", "HR Manager") == "full_time"
+    assert job_type_of(None, "HR Manager") is None
+
+
+def test_greenhouse_lever_are_direct_adzuna_is_not():
+    from app.api.jobs import normalize_adzuna, normalize_greenhouse, normalize_lever
+
+    g = normalize_greenhouse(
+        {
+            "id": 1,
+            "title": "ML Engineer",
+            "absolute_url": "https://boards.greenhouse.io/x/1",
+            "location": {"name": "Berlin"},
+            "content": "py",
+        },
+        "Acme",
+    )
+    lv = normalize_lever(
+        {
+            "id": "a",
+            "text": "Data Scientist",
+            "hostedUrl": "https://jobs.lever.co/x/a",
+            "categories": {"location": "Berlin"},
+            "descriptionPlain": "sql",
+        },
+        "Acme",
+    )
+    az = normalize_adzuna(
+        {
+            "id": 2,
+            "title": "ML Engineer",
+            "redirect_url": "https://adzuna/x",
+            "company": {"display_name": "Acme"},
+            "location": {"display_name": "Berlin"},
+            "description": "py",
+        },
+        "de",
+    )
+    assert g.apply_direct is True and lv.apply_direct is True
+    assert az.apply_direct is False
+
+
+def test_dedup_prefers_direct_apply_url():
+    from app.api.jobs import dedup, normalize_adzuna, normalize_greenhouse
+
+    az = normalize_adzuna(
+        {
+            "id": 2,
+            "title": "ML Engineer",
+            "redirect_url": "https://adzuna/x",
+            "company": {"display_name": "Acme"},
+            "location": {"display_name": "Zurich"},
+            "description": "py",
+        },
+        "ch",
+    )
+    gh = normalize_greenhouse(
+        {
+            "id": 3,
+            "title": "ML Engineer",
+            "absolute_url": "https://boards.greenhouse.io/acme/3",
+            "location": {"name": "Zurich"},
+            "content": "py",
+        },
+        "Acme",
+    )
+    out = dedup([az, gh])
+    assert len(out) == 1 and out[0].apply_direct is True
+    assert "greenhouse.io" in out[0].application_url
+    assert set(out[0].sources) == {"Adzuna", "Greenhouse"}
+
+
+def test_internship_query_expansion():
+    from app.api.jobs import _query_what, parse_query
+
+    c = parse_query("ML internship India")
+    assert c.employment_type == "Internship"
+    assert "intern" in _query_what(c).lower()  # broadened recall
+    # non-internship queries are not broadened
+    assert "intern" not in _query_what(parse_query("Data Scientist Germany")).lower()
+
+
+def test_jooble_normalize_internship():
+    from app.api.jobs import normalize_jooble
+
+    j = normalize_jooble(
+        {
+            "title": "Finance Intern",
+            "company": "Bank",
+            "location": "Mumbai, India",
+            "link": "https://emp/x",
+            "snippet": "Finance internship",
+            "type": "Internship",
+        }
+    )
+    assert j and j.source == "Jooble" and j.apply_direct is False
+    assert j.job_type == "internship" and j.country == "India" and j.city == "Mumbai"
