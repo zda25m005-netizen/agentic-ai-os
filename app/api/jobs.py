@@ -342,6 +342,27 @@ def _match_terms(cons: Constraints) -> list[str]:
     return non_generic or cons.role_terms
 
 
+def role_terms_for(role_phrase: str | None) -> list[str]:
+    """Build role match terms (tokens + in-domain synonyms) from a role phrase.
+    Shared by free-text query parsing and the structured filter path so both
+    enforce the same role constraint."""
+    tokens = re.findall(r"[a-zA-Z][a-zA-Z0-9+#]*", role_phrase or "")
+    role_terms: list[str] = []
+    seen: set[str] = set()
+    for t in tokens:
+        tl = t.lower()
+        if tl not in _FILLER and not t.isdigit() and tl not in seen:
+            seen.add(tl)
+            role_terms.append(tl)
+    rl = (role_phrase or "").lower()
+    for group in SYNONYM_GROUPS:
+        if any(re.search(rf"\b{re.escape(g)}\b", rl) for g in group):
+            for g in group:
+                if g not in role_terms:
+                    role_terms.append(g)
+    return role_terms
+
+
 def parse_query(query: str) -> Constraints:
     raw = (query or "").strip()
     work = f" {raw} "
@@ -417,20 +438,7 @@ def parse_query(query: str) -> Constraints:
     tokens = re.findall(r"[a-zA-Z][a-zA-Z0-9+#]*", role_src)
     role_tokens = [t for t in tokens if t.lower() not in _FILLER and not t.isdigit()]
     role = " ".join(role_tokens).strip()
-
-    role_terms: list[str] = []
-    seen: set[str] = set()
-    for t in role_tokens:
-        tl = t.lower()
-        if tl not in seen:
-            seen.add(tl)
-            role_terms.append(tl)
-    role_l = role.lower()
-    for group in SYNONYM_GROUPS:
-        if any(re.search(rf"\b{re.escape(g)}\b", role_l) for g in group):
-            for g in group:
-                if g not in role_terms:
-                    role_terms.append(g)
+    role_terms = role_terms_for(role)
 
     return Constraints(
         role=(role if role else None),
@@ -453,16 +461,62 @@ def parse_query(query: str) -> Constraints:
 # --------------------------------------------------------------------------- #
 # Models
 # --------------------------------------------------------------------------- #
+class FilterSpec(BaseModel):
+    """Structured, individually-removable constraints. When present these are
+    authoritative (used verbatim), so removing one chip drops exactly that
+    constraint — no re-parsing of a stale query string."""
+
+    role: str | None = None
+    country: str | None = None
+    city: str | None = None
+    experience: str | None = None
+    employment_type: str | None = None
+    remote: bool = False
+    worldwide: bool = False
+
+
 class SearchRequest(BaseModel):
     query: str = ""
     limit: int = 200
     experience: str | None = None  # explicit hard experience filter (e.g. "0-2")
     use_resume: bool = False  # personalize ranking with the stored resume profile
+    # When provided, the active filters are authoritative and REPLACE the query
+    # parse entirely (fixes stale filters leaking across searches).
+    filters: FilterSpec | None = None
     # legacy hints (ignored; query is authoritative) — kept for compatibility
     roles: list[str] = Field(default_factory=list)
     locations: list[str] = Field(default_factory=list)
     keywords: list[str] = Field(default_factory=list)
     remote: bool = False
+
+
+def build_constraints(f: FilterSpec) -> Constraints:
+    """Deterministic constraints from an explicit filter set (no query text)."""
+    if f.worldwide:
+        scope, country, city = "WORLDWIDE", None, None
+    elif f.city:
+        scope, country, city = "STRICT_CITY", f.country, f.city
+    elif f.country:
+        scope, country, city = "STRICT_COUNTRY", f.country, None
+    else:
+        scope, country, city = "ANY", None, None
+    exp_min = exp_max = seniority = exp_disp = None
+    if f.experience:
+        exp_min, exp_max, seniority, exp_disp = exp_bounds(f.experience)
+    return Constraints(
+        role=(f.role or None),
+        role_terms=role_terms_for(f.role) if f.role else [],
+        employment_type=f.employment_type,
+        country=country,
+        city=city,
+        remote=f.remote,
+        experience=exp_disp,
+        exp_min=exp_min,
+        exp_max=exp_max,
+        seniority=seniority,
+        location_scope=scope,
+        raw=(f.role or ""),
+    )
 
 
 class JobItem(BaseModel):
@@ -1104,16 +1158,20 @@ async def gather_jobs(cons: Constraints) -> tuple[list[JobItem], list[SourceStat
 
 @router.post("/search", response_model=JobSearchResponse)
 async def search_jobs(req: SearchRequest) -> JobSearchResponse:
-    q = req.query.strip()
-    if not q and (req.roles or req.locations):  # legacy compatibility
-        q = " ".join([*req.roles, *req.locations, *(req.keywords or [])]).strip()
-    cons = parse_query(q)
-    # An explicit experience selection (e.g. the UI's "0–2 years" filter) is a
-    # hard constraint and overrides whatever the free-text query implied.
-    if req.experience:
-        emn, emx, esen, edisp = exp_bounds(req.experience)
-        if emn is not None or emx is not None or esen is not None:
-            cons.exp_min, cons.exp_max, cons.seniority, cons.experience = emn, emx, esen, edisp
+    if req.filters is not None:
+        # Structured active filters are authoritative — a fresh, exact intent.
+        cons = build_constraints(req.filters)
+    else:
+        q = req.query.strip()
+        if not q and (req.roles or req.locations):  # legacy compatibility
+            q = " ".join([*req.roles, *req.locations, *(req.keywords or [])]).strip()
+        cons = parse_query(q)
+        # An explicit experience selection (e.g. the UI's "0–2 years" filter) is a
+        # hard constraint and overrides whatever the free-text query implied.
+        if req.experience:
+            emn, emx, esen, edisp = exp_bounds(req.experience)
+            if emn is not None or emx is not None or esen is not None:
+                cons.exp_min, cons.exp_max, cons.seniority, cons.experience = emn, emx, esen, edisp
     raw, sources = await gather_jobs(cons)
     deduped = dedup(raw)
     valid = validate_and_rank(deduped, cons, req.limit)

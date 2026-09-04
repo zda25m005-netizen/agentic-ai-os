@@ -107,6 +107,9 @@
 .jsa .rh-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 9px; }
 .jsa .cchip { font-size: 11.5px; color: #C9DCFF; background: rgba(110,168,255,0.1); border: 1px solid rgba(110,168,255,0.28); border-radius: 6px; padding: 3px 9px; }
 .jsa .cchip.scope { color: var(--htext2); background: rgba(255,255,255,0.04); border-color: var(--hborder-strong); }
+.jsa .cchip.removable { display: inline-flex; align-items: center; gap: 4px; padding-right: 5px; }
+.jsa .cchip-x { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border: none; background: none; color: #9DBBEA; cursor: pointer; border-radius: 4px; padding: 0; }
+.jsa .cchip-x:hover { background: rgba(255,255,255,0.12); color: #fff; }
 .jsa .rh-note { font-size: 12px; color: var(--hmuted); margin-top: 8px; }
 
 /* resume / candidate profile panel */

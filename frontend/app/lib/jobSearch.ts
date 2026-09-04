@@ -97,10 +97,30 @@ export function constraintChips(c: SearchConstraints): string[] {
 
 export function resultCountText(c: SearchConstraints, n: number): string {
   const word = n === 1 ? "job" : "jobs";
-  if (c.locationScope === "WORLDWIDE") return `${n} ${word} found worldwide`;
-  if (c.city) return `${n} ${word} found in ${c.city}`;
-  if (c.country) return `${n} ${word} found in ${c.country}`;
-  return `${n} ${word} found`;
+  const role = c.role ? `${c.role} ` : "";
+  if (c.locationScope === "WORLDWIDE") return `${n} ${role}${word} found worldwide`;
+  if (c.city) return `${n} ${role}${word} found in ${c.city}`;
+  if (c.country) return `${n} ${role}${word} found in ${c.country}`;
+  return `${n} ${role}${word} found`;
+}
+
+// Structured, individually-removable active filters (single source of truth).
+export interface FilterSpec {
+  role?: string | null;
+  country?: string | null;
+  city?: string | null;
+  experience?: string | null;      // display string, e.g. "0–2 years"
+  employmentType?: string | null;
+  remote?: boolean;
+  worldwide?: boolean;
+}
+
+export function filtersFromConstraints(c: SearchConstraints): FilterSpec {
+  return {
+    role: c.role, country: c.country, city: c.city,
+    experience: c.experience, employmentType: c.employmentType,
+    remote: c.remote, worldwide: c.locationScope === "WORLDWIDE",
+  };
 }
 
 // --- real, deterministic criteria extraction --------------------------------
@@ -204,6 +224,37 @@ export async function runJobSearch(
     headers: { "content-type": "application/json" },
     cache: "no-store",
     body: JSON.stringify({ query, limit: 200, experience: experience || null, use_resume: useResume }),
+  });
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try { const b = await res.json(); if (b?.detail) detail = b.detail; } catch { /* ignore */ }
+    throw new Error(detail);
+  }
+  const data = (await res.json()) as RawResponse;
+  return {
+    jobs: (data.jobs || []).map(toListing),
+    sources: data.sources || [],
+    constraints: toConstraints(data.constraints),
+    totalFetched: data.total_fetched || 0,
+  };
+}
+
+// Search from explicit active filters — REPLACES any prior query intent, so a
+// removed chip drops exactly that constraint (no stale terms carried over).
+export async function runJobSearchFilters(f: FilterSpec, useResume = false): Promise<JobSearchResult> {
+  const res = await fetch(`${API}/jobs/search`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    cache: "no-store",
+    body: JSON.stringify({
+      limit: 200,
+      use_resume: useResume,
+      filters: {
+        role: f.role || null, country: f.country || null, city: f.city || null,
+        experience: f.experience || null, employment_type: f.employmentType || null,
+        remote: !!f.remote, worldwide: !!f.worldwide,
+      },
+    }),
   });
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;

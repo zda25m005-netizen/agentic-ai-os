@@ -11,9 +11,11 @@ export default function JobSearchInput({ value, onChange, onSearch, searching, c
   searching: boolean;
   compact?: boolean;
 }) {
-  const appendChip = (c: string) => {
-    if (value.toLowerCase().includes(c.toLowerCase())) return;
-    onChange((value.trim() + " " + c).trim());
+  // Toggle: click adds the term, click again removes it from the query text.
+  const toggleChip = (c: string) => {
+    const re = new RegExp(`\\s*\\b${c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+    if (re.test(value)) onChange(value.replace(re, "").replace(/\s+/g, " ").trim());
+    else onChange((value.trim() + " " + c).trim());
   };
   return (
     <>
@@ -28,7 +30,7 @@ export default function JobSearchInput({ value, onChange, onSearch, searching, c
         <div className="chips">
           {QUICK.map((c) => (
             <button key={c} className={`chip ${value.toLowerCase().includes(c.toLowerCase()) ? "active" : ""}`}
-              onClick={() => appendChip(c)}>{c}</button>
+              onClick={() => toggleChip(c)}>{c}</button>
           ))}
         </div>
         <div className="box-foot">

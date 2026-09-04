@@ -13,9 +13,9 @@ import SearchHistory from "../../components/jobsearch/SearchHistory";
 import ResumePanel from "../../components/jobsearch/ResumePanel";
 import ProfileDrawer from "../../components/jobsearch/ProfileDrawer";
 import {
-  parseCriteria, runJobSearch, loadHistory, pushHistory,
-  loadSaved, toggleSaved, computeInsights, constraintChips, resultCountText,
-  JobListing, JobSearchResult, SearchHistoryEntry,
+  parseCriteria, runJobSearch, runJobSearchFilters, filtersFromConstraints,
+  loadHistory, pushHistory, loadSaved, toggleSaved, computeInsights, constraintChips, resultCountText,
+  JobListing, JobSearchResult, SearchHistoryEntry, FilterSpec,
 } from "../../lib/jobSearch";
 import { getResume, ResumeState } from "../../lib/resumeApi";
 
@@ -55,6 +55,7 @@ export default function JobSearchAgentPage() {
   const [showReport, setShowReport] = useState(false);
   const [resume, setResume] = useState<ResumeState | null>(null);
   const [showProfile, setShowProfile] = useState(false);
+  const [activeFilters, setActiveFilters] = useState<FilterSpec | null>(null);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => { setHistory(loadHistory()); setSaved(loadSaved()); }, []);
@@ -77,6 +78,7 @@ export default function JobSearchAgentPage() {
       if (timer.current) clearInterval(timer.current);
       setStep(5);
       setResult(r);
+      setActiveFilters(filtersFromConstraints(r.constraints)); // fresh intent REPLACES old filters
       setTookMs(Date.now() - t0);
       setHistory(pushHistory(q.trim(), constraintChips(r.constraints).join(" · ") || q.trim(), r.jobs.length));
       setQuick("all"); setSort("match"); setView("all"); setText(""); setSelected(new Set()); setSelecting(false);
@@ -87,6 +89,39 @@ export default function JobSearchAgentPage() {
       setResult(null);
       setPhase("results");
     }
+  };
+
+  // Re-run from explicit active filters (chip removal / toggle). Backend treats
+  // these as authoritative, so nothing stale is carried over.
+  const searchFilters = async (f: FilterSpec) => {
+    if (phase === "searching") return;
+    setActiveFilters(f);
+    setPhase("searching"); setError(null); setStep(0); setModify(false);
+    const t0 = Date.now();
+    timer.current = setInterval(() => setStep((s) => Math.min(s + 1, 4)), 550);
+    try {
+      const r = await runJobSearchFilters(f, !!resume?.exists);
+      if (timer.current) clearInterval(timer.current);
+      setStep(5);
+      setResult(r);
+      setActiveFilters(filtersFromConstraints(r.constraints));
+      setTookMs(Date.now() - t0);
+      setQuick("all"); setSort("match"); setView("all"); setText(""); setSelected(new Set()); setSelecting(false);
+      setPhase("results");
+    } catch (e) {
+      if (timer.current) clearInterval(timer.current);
+      setError(e instanceof Error ? e.message : "Search failed");
+      setPhase("results");
+    }
+  };
+
+  const removeFilter = (key: keyof FilterSpec) => {
+    if (!activeFilters) return;
+    const next: FilterSpec = { ...activeFilters };
+    if (key === "remote" || key === "worldwide") next[key] = false;
+    else next[key] = null;
+    if (key === "country") next.city = null; // dropping country drops its city too
+    searchFilters(next);
   };
 
   const search = (expOverride?: string) =>
@@ -190,20 +225,33 @@ export default function JobSearchAgentPage() {
                 <div className="rh-sum">
                   {result ? resultCountText(result.constraints, allJobs.length) : query.trim()}
                 </div>
-                {result && (
-                  <>
-                    {constraintChips(result.constraints).length > 0 && (
+                {activeFilters && (() => {
+                  const f = activeFilters;
+                  const chips: { key: keyof FilterSpec; label: string }[] = [];
+                  if (f.role) chips.push({ key: "role", label: f.role });
+                  if (f.employmentType) chips.push({ key: "employmentType", label: f.employmentType });
+                  if (f.experience) chips.push({ key: "experience", label: f.experience });
+                  if (f.remote) chips.push({ key: "remote", label: "Remote" });
+                  if (f.worldwide) chips.push({ key: "worldwide", label: "Worldwide" });
+                  else if (f.city) chips.push({ key: "city", label: f.city });
+                  else if (f.country) chips.push({ key: "country", label: f.country });
+                  return chips.length > 0 ? (
+                    <>
                       <div className="rh-chips">
-                        {constraintChips(result.constraints).map((c) => (
-                          <span className={`cchip ${c === "Strict location" || c === "Worldwide" ? "scope" : ""}`} key={c}>{c}</span>
+                        {chips.map((ch) => (
+                          <span className="cchip removable" key={ch.key}>
+                            {ch.label}
+                            <button className="cchip-x" onClick={() => removeFilter(ch.key)}
+                              aria-label={`Remove ${ch.label}`}><Icon name="x" size={11} /></button>
+                          </span>
                         ))}
                       </div>
-                    )}
-                    {result.constraints.locationScope !== "ANY" && (
-                      <div className="rh-note">Showing only jobs matching your requested location and role.</div>
-                    )}
-                  </>
-                )}
+                      {(f.role || f.country || f.city || f.experience) && (
+                        <div className="rh-note">Showing only jobs matching your active filters. Click × to remove one.</div>
+                      )}
+                    </>
+                  ) : null;
+                })()}
                 {!error && (
                   <div className="rh-exec">
                     <Icon name="check" size={13} style={{ color: "var(--hgreen)" }} />

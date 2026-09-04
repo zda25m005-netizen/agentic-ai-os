@@ -355,3 +355,50 @@ def test_senior_request_excludes_entry():
     c = parse_query("Senior ML Engineer India")
     assert c.seniority == "senior"
     assert experience_matches(J("ML Engineer", exp_min=0, exp_max=2, sen="entry"), c) is False
+
+
+# --- structured filters (fresh intent, individually removable) --------------
+def test_build_constraints_from_filters():
+    from app.api.jobs import FilterSpec, build_constraints
+
+    c = build_constraints(FilterSpec(role="HR", country="India", experience="0-2"))
+    assert c.country == "India" and c.location_scope == "STRICT_COUNTRY"
+    assert "human resources" in c.role_terms and c.exp_max == 2
+
+
+def test_removing_country_filter_drops_location():
+    from app.api.jobs import FilterSpec, build_constraints
+
+    c = build_constraints(FilterSpec(role="HR"))  # country removed
+    assert c.location_scope == "ANY" and c.country is None
+
+
+def test_worldwide_filter_clears_country():
+    from app.api.jobs import FilterSpec, build_constraints
+
+    c = build_constraints(FilterSpec(role="HR", country="India", worldwide=True))
+    assert c.location_scope == "WORLDWIDE" and c.country is None
+
+
+def test_filters_role_is_hard_no_tech_leak():
+    from app.api.jobs import FilterSpec, build_constraints
+
+    c = build_constraints(FilterSpec(role="HR", country="India"))
+    assert role_matches("Human Resources Specialist", c) is True
+    assert role_matches("Talent Acquisition Partner", c) is True
+    assert role_matches("Software Engineer", c) is False
+    assert role_matches("Data Scientist", c) is False
+
+
+def test_filters_hard_filter_end_to_end():
+    from app.api.jobs import FilterSpec, build_constraints
+
+    c = build_constraints(FilterSpec(role="HR", country="India", experience="0-2"))
+    jobs = [
+        J("HR Specialist", country="India", exp_min=0, exp_max=2),  # keep
+        J("ML Engineer", country="India", exp_min=0, exp_max=2),  # wrong role
+        J("HR Manager", country="Germany"),  # wrong country
+        J("HR Manager", country="India", exp_min=7, exp_max=12, sen="senior"),  # wrong exp
+    ]
+    out = validate_and_rank(jobs, c, 50)
+    assert [j.title for j in out] == ["HR Specialist"]
