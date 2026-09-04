@@ -23,13 +23,14 @@ from __future__ import annotations
 
 import asyncio
 import html
-import os
 import re
 from datetime import UTC, datetime
 
 import httpx
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
+
+from app.core.config import get_settings
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -327,7 +328,10 @@ class Constraints(BaseModel):
     remote: bool = False
     hybrid: bool = False
     onsite: bool = False
-    experience: str | None = None
+    experience: str | None = None  # display, e.g. "0–2 years"
+    exp_min: int | None = None  # requested candidate min years (hard constraint)
+    exp_max: int | None = None  # requested candidate max years (hard constraint)
+    seniority: str | None = None  # "entry" | "senior" (from the request)
     location_scope: str = "ANY"  # WORLDWIDE | STRICT_COUNTRY | STRICT_CITY | ANY
     raw: str = ""
 
@@ -382,19 +386,14 @@ def parse_query(query: str) -> Constraints:
             break
 
     experience = None
+    exp_min = exp_max = None
+    seniority = None
     for rx in _EXPERIENCE:
         m = rx.search(raw)
         if m:
             g = m.group(0)
             matched_spans.append(g)
-            if re.search(r"fresh|new\s*grad|entry|graduate", g, re.I):
-                experience = "0–2 years"
-            elif re.search(r"senior|sr|lead|principal|staff", g, re.I):
-                experience = "Senior"
-            elif m.lastindex and m.lastindex >= 2 and m.group(2) and m.group(2).isdigit():
-                experience = f"{m.group(1)}–{m.group(2)} years"
-            else:
-                experience = f"{m.group(1)}+ years"
+            exp_min, exp_max, seniority, experience = exp_bounds(g)
             break
 
     # role phrase = query minus every matched location/type/experience/worldwide span
@@ -443,6 +442,9 @@ def parse_query(query: str) -> Constraints:
         hybrid=hybrid,
         onsite=onsite,
         experience=experience,
+        exp_min=exp_min,
+        exp_max=exp_max,
+        seniority=seniority,
         location_scope=scope,
         raw=raw,
     )
@@ -470,7 +472,10 @@ class JobItem(BaseModel):
     country: str | None = None
     city: str | None = None
     employment_type: str | None = None
-    experience: str | None = None
+    experience: str | None = None  # display, from the posting
+    experience_min: int | None = None  # required years (from posting), if stated
+    experience_max: int | None = None
+    seniority: str | None = None  # "entry" | "senior"
     workplace_type: str | None = None
     remote_worldwide: bool = False
     salary: str | None = None
@@ -598,6 +603,87 @@ def _intern_title(title: str) -> bool:
 
 
 # --------------------------------------------------------------------------- #
+# Experience parsing — the single canonical implementation used by both the
+# query (what the candidate has / wants) and each job (what it requires).
+# --------------------------------------------------------------------------- #
+def exp_bounds(text: str | None) -> tuple[int | None, int | None, str | None, str | None]:
+    """Parse an experience expression -> (min, max, seniority, display).
+
+    Handles "0-2", "0–2 years", "0 to 2 years", "5+ years", "fresher",
+    "entry level", "graduate", "junior", "senior/lead/principal/staff".
+    """
+    t = (text or "").lower()
+    m = re.search(r"(\d{1,2})\s*(?:-|–|—|to)\s*(\d{1,2})", t)
+    if m:
+        a, b = int(m.group(1)), int(m.group(2))
+        if a <= b <= 50:
+            sen = "entry" if b <= 2 else "senior" if a >= 5 else None
+            return a, b, sen, f"{a}–{b} years"
+    m = re.search(r"(\d{1,2})\s*\+", t)
+    if m:
+        a = int(m.group(1))
+        return a, None, ("senior" if a >= 5 else "entry" if a <= 2 else None), f"{a}+ years"
+    if re.search(
+        r"\b(fresher|freshers|fresh|new\s*grad(uate)?|entry[- ]?level|entry|graduate|junior)\b", t
+    ):
+        return 0, 2, "entry", "0–2 years"
+    if re.search(r"\b(senior|sr\.?|lead|principal|staff)\b", t):
+        return 5, None, "senior", "Senior"
+    m = re.search(r"(\d{1,2})\s*years?", t)
+    if m:
+        a = int(m.group(1))
+        return a, a, ("entry" if a <= 2 else "senior" if a >= 5 else None), f"{a} years"
+    return None, None, None, None
+
+
+def _exp_display(mn: int | None, mx: int | None, sen: str | None) -> str | None:
+    if mn is not None and mx is not None:
+        return f"{mn} years" if mn == mx else f"{mn}–{mx} years"
+    if mn is not None:
+        return f"{mn}+ years"
+    if sen == "entry":
+        return "Entry level"
+    if sen == "senior":
+        return "Senior"
+    return None
+
+
+def job_experience_fields(
+    title: str, body: str
+) -> tuple[int | None, int | None, str | None, str | None]:
+    """Extract a job's REQUIRED experience from its title + description.
+
+    Reads structured phrasing ("7 to 12 years", "min 5 years", "3+ years",
+    "5 years of experience") and title seniority. Returns
+    (experience_min, experience_max, seniority, display); all None when the
+    posting doesn't state it (never inferred as entry-level).
+    """
+    text = f"{title}\n{strip_html(body)[:2000]}".lower()
+    m = re.search(r"(\d{1,2})\s*(?:-|–|—|to)\s*(\d{1,2})\s*\+?\s*(?:years?|yrs?)", text)
+    if m:
+        a, b = int(m.group(1)), int(m.group(2))
+        if a <= b <= 50:
+            sen = "entry" if b <= 2 else "senior" if a >= 5 else None
+            return a, b, sen, _exp_display(a, b, sen)
+    m = re.search(r"(?:min(?:imum)?(?:\s+of)?|at least)\s*(\d{1,2})\s*\+?\s*(?:years?|yrs?)", text)
+    if not m:
+        m = re.search(r"(\d{1,2})\s*\+\s*(?:years?|yrs?)", text)
+    if not m:
+        m = re.search(r"(\d{1,2})\s*(?:years?|yrs?)\s+(?:of\s+)?(?:experience|exp)", text)
+    if m:
+        a = int(m.group(1))
+        sen = "senior" if a >= 5 else "entry" if a <= 2 else None
+        return a, None, sen, _exp_display(a, None, sen)
+    if _intern_title(title) or re.search(
+        r"\b(fresher|freshers|graduate|entry[- ]?level|new grad|junior)\b", text
+    ):
+        return 0, 2, "entry", "Entry level"
+    if re.search(r"\b(senior|sr\.?|lead|principal|staff|head of|director|vp)\b", title.lower()):
+        return None, None, "senior", "Senior"
+    return None, None, None, None
+
+
+# --------------------------------------------------------------------------- #
 # Strict validation (hard filters) — runs BEFORE ranking
 # --------------------------------------------------------------------------- #
 def role_matches(title: str, cons: Constraints) -> bool:
@@ -651,12 +737,36 @@ def workplace_matches(job: JobItem, cons: Constraints) -> bool:
     return True
 
 
+def experience_matches(job: JobItem, cons: Constraints) -> bool:
+    """HARD filter: a job whose required experience exceeds the requested range
+    is REMOVED (not down-ranked). Jobs that don't state experience are kept, to
+    avoid false negatives — unknown is not treated as too-senior.
+    """
+    if cons.exp_min is None and cons.exp_max is None and cons.seniority is None:
+        return True  # user set no experience constraint
+    jmin, jmax, jsen = job.experience_min, job.experience_max, job.seniority
+    # Entry-level request must exclude clearly senior/lead/principal roles.
+    if cons.seniority == "entry" and jsen == "senior":
+        return False
+    # Job's minimum required years exceeds what the candidate has (requested max).
+    if cons.exp_max is not None and jmin is not None and jmin > cons.exp_max:
+        return False
+    # Senior request should drop clearly entry-level/junior roles.
+    if cons.seniority == "senior" and jsen == "entry":
+        return False
+    # Job's ceiling is below the requested floor (e.g. want 5+, job caps at 2).
+    if cons.exp_min is not None and jmax is not None and jmax < cons.exp_min:
+        return False
+    return True
+
+
 def job_matches(job: JobItem, cons: Constraints) -> bool:
     return (
         role_matches(job.title, cons)
         and employment_matches(job, cons)
         and location_matches(job, cons)
         and workplace_matches(job, cons)
+        and experience_matches(job, cons)
     )
 
 
@@ -724,6 +834,7 @@ def normalize_greenhouse(raw: dict, company: str) -> JobItem | None:
     loc = ((raw.get("location") or {}).get("name") or "").strip() or None
     country, city, is_remote, worldwide = normalize_location(loc)
     body = raw.get("content") or ""
+    emn, emx, esen, edisp = job_experience_fields(title, body)
     return JobItem(
         id=f"gh-{company}-{raw.get('id')}",
         title=title,
@@ -732,7 +843,10 @@ def normalize_greenhouse(raw: dict, company: str) -> JobItem | None:
         country=country,
         city=city,
         employment_type="Internship" if _intern_title(title) else None,
-        experience="Entry level" if _intern_title(title) else None,
+        experience=edisp,
+        experience_min=emn,
+        experience_max=emx,
+        seniority=esen,
         workplace_type="Remote" if is_remote else None,
         remote_worldwide=worldwide,
         skills=extract_skills(body),
@@ -757,6 +871,7 @@ def normalize_lever(raw: dict, company: str) -> JobItem | None:
     )
     body = raw.get("descriptionPlain") or raw.get("description") or ""
     wt = (cats.get("workplaceType") or "").title() or ("Remote" if is_remote else None)
+    emn, emx, esen, edisp = job_experience_fields(title, body)
     return JobItem(
         id=f"lv-{company}-{raw.get('id')}",
         title=title,
@@ -765,7 +880,10 @@ def normalize_lever(raw: dict, company: str) -> JobItem | None:
         country=country,
         city=city,
         employment_type="Internship" if _intern_title(title) else (cats.get("commitment") or None),
-        experience="Entry level" if _intern_title(title) else None,
+        experience=edisp,
+        experience_min=emn,
+        experience_max=emx,
+        seniority=esen,
         workplace_type=wt,
         remote_worldwide=worldwide,
         skills=extract_skills(body),
@@ -829,6 +947,7 @@ def normalize_adzuna(raw: dict, cc: str) -> JobItem | None:
     if smin and smax and not raw.get("salary_is_predicted", "0") == "1":
         salary = f"{int(smin):,}–{int(smax):,}"
     body = raw.get("description") or ""
+    emn, emx, esen, edisp = job_experience_fields(title, body)
     return JobItem(
         id=f"az-{raw.get('id')}",
         title=title,
@@ -837,6 +956,10 @@ def normalize_adzuna(raw: dict, cc: str) -> JobItem | None:
         country=country,
         city=city,
         employment_type=emp,
+        experience=edisp,
+        experience_min=emn,
+        experience_max=emx,
+        seniority=esen,
         workplace_type="Remote" if is_remote else None,
         remote_worldwide=worldwide,
         salary=salary,
@@ -904,7 +1027,8 @@ def _adzuna_country_codes(cons: Constraints) -> list[str]:
 async def gather_jobs(cons: Constraints) -> tuple[list[JobItem], list[SourceStatus]]:
     jobs: list[JobItem] = []
     sources: list[SourceStatus] = []
-    az_id, az_key = os.getenv("ADZUNA_APP_ID"), os.getenv("ADZUNA_APP_KEY")
+    _s = get_settings()
+    az_id, az_key = _s.adzuna_app_id, _s.adzuna_app_key
 
     async with httpx.AsyncClient(
         timeout=12, headers={"user-agent": _UA}, follow_redirects=True
@@ -977,6 +1101,12 @@ async def search_jobs(req: SearchRequest) -> JobSearchResponse:
     if not q and (req.roles or req.locations):  # legacy compatibility
         q = " ".join([*req.roles, *req.locations, *(req.keywords or [])]).strip()
     cons = parse_query(q)
+    # An explicit experience selection (e.g. the UI's "0–2 years" filter) is a
+    # hard constraint and overrides whatever the free-text query implied.
+    if req.experience:
+        emn, emx, esen, edisp = exp_bounds(req.experience)
+        if emn is not None or emx is not None or esen is not None:
+            cons.exp_min, cons.exp_max, cons.seniority, cons.experience = emn, emx, esen, edisp
     raw, sources = await gather_jobs(cons)
     deduped = dedup(raw)
     valid = validate_and_rank(deduped, cons, req.limit)

@@ -9,7 +9,10 @@ from app.api.jobs import (
     JobItem,
     dedup,
     employment_matches,
+    exp_bounds,
+    experience_matches,
     extract_skills,
+    job_experience_fields,
     job_matches,
     normalize_location,
     parse_query,
@@ -17,6 +20,13 @@ from app.api.jobs import (
     strip_html,
     validate_and_rank,
 )
+
+
+def JX(title, **kw):
+    """Job with experience parsed from its own title+description (like a real feed)."""
+    body = kw.pop("body", "")
+    mn, mx, sen, disp = job_experience_fields(title, body)
+    return J(title, exp_min=mn, exp_max=mx, sen=sen, **kw)
 
 
 def J(
@@ -28,6 +38,9 @@ def J(
     emp=None,
     wt=None,
     remote_ww=False,
+    exp_min=None,
+    exp_max=None,
+    sen=None,
     url="https://x/1",
     source="Adzuna",
 ):
@@ -40,6 +53,9 @@ def J(
         employment_type=emp,
         workplace_type=wt,
         remote_worldwide=remote_ww,
+        experience_min=exp_min,
+        experience_max=exp_max,
+        seniority=sen,
         source=source,
         application_url=url,
         sources=[source],
@@ -252,3 +268,90 @@ def test_dedup_merges_sources():
     b = J("ML  Engineer", company="acme", country="India", source="Lever")
     out = dedup([a, b])
     assert len(out) == 1 and set(out[0].sources) == {"Greenhouse", "Lever"}
+
+
+# --- experience: parsing ----------------------------------------------------
+def test_exp_bounds_variants():
+    assert exp_bounds("0-2 years")[:3] == (0, 2, "entry")
+    assert exp_bounds("0–2")[:3] == (0, 2, "entry")
+    assert exp_bounds("0 to 2 years")[:3] == (0, 2, "entry")
+    assert exp_bounds("1-2 years")[:3] == (1, 2, "entry")
+    assert exp_bounds("5+ years")[:3] == (5, None, "senior")
+    assert exp_bounds("fresher")[:3] == (0, 2, "entry")
+    assert exp_bounds("entry level")[:3] == (0, 2, "entry")
+    assert exp_bounds("senior")[:3] == (5, None, "senior")
+    assert exp_bounds("")[:3] == (None, None, None)
+
+
+def test_job_experience_extracted_from_description():
+    # The exact reported bug source string.
+    assert job_experience_fields("ML Engineer", "Exp: 7 to 12yrs")[:3] == (7, 12, "senior")
+    assert job_experience_fields("ML Engineer", "Minimum 5 years of experience")[0] == 5
+    assert job_experience_fields("ML Engineer", "3+ years experience")[0] == 3
+    assert job_experience_fields("Senior ML Engineer", "")[2] == "senior"
+    assert job_experience_fields("ML Engineer Intern", "")[2] == "entry"
+    assert job_experience_fields("ML Engineer", "Great team, fast pace")[:3] == (None, None, None)
+
+
+# --- experience: HARD filter ------------------------------------------------
+def test_experience_no_constraint_keeps_all():
+    c = parse_query("ML Engineer India")  # no experience mentioned
+    assert experience_matches(J("ML Engineer", exp_min=7, exp_max=12, sen="senior"), c) is True
+
+
+def test_internship_is_not_an_experience_constraint():
+    c = parse_query("ML Engineer internship India")
+    assert c.exp_min is None and c.exp_max is None and c.seniority is None
+    # a 7–12y internship posting is not excluded *by experience* (only role/loc/type apply)
+    assert experience_matches(J("ML Engineer Intern", exp_min=7, exp_max=12), c) is True
+
+
+def test_entry_request_excludes_senior_years():
+    c = parse_query("ML Engineer India 0-2 years")
+    assert c.exp_max == 2 and c.seniority == "entry"
+    assert experience_matches(J("ML Engineer", exp_min=7, exp_max=12, sen="senior"), c) is False
+    assert experience_matches(J("ML Engineer", exp_min=0, exp_max=2), c) is True
+    assert experience_matches(J("ML Engineer", exp_min=1, exp_max=2), c) is True
+    assert (
+        experience_matches(J("ML Engineer", exp_min=None, exp_max=None), c) is True
+    )  # unknown kept
+
+
+def test_score_does_not_override_experience_hard_filter():
+    # Job B has higher role relevance but wrong experience -> still excluded.
+    c = parse_query("ML Engineer India 0-2 years")
+    b = J("ML Engineer", country="India", exp_min=7, exp_max=12, sen="senior")
+    assert job_matches(b, c) is False
+
+
+def test_must_pass_experience_scenario():
+    c = parse_query("ML Engineer jobs in India 0-2 years")
+    jobs = [
+        J("ML Engineer", country="India", exp_min=0, exp_max=2),  # A include
+        J("ML Engineer", country="India", exp_min=1, exp_max=2),  # B include
+        J("ML Engineer", country="India", exp_min=7, exp_max=12, sen="senior"),  # C exclude
+        J("Senior ML Engineer", country="India", exp_min=8, sen="senior"),  # D exclude
+        J("ML Engineer", country="United States", exp_min=0, exp_max=2),  # E exclude (country)
+        J("ML Engineer", country="Germany", exp_min=1, exp_max=2),  # F exclude (country)
+    ]
+    out = validate_and_rank(jobs, c, 50)
+    assert len(out) == 2
+    assert all(j.country == "India" for j in out)
+
+
+def test_exact_bug_via_experience_override():
+    # "ML Engineer India" then apply the 0–2 years filter (request override).
+    c = parse_query("ML Engineer India")
+    mn, mx, sen, disp = exp_bounds("0-2")
+    c.exp_min, c.exp_max, c.seniority, c.experience = mn, mx, sen, disp
+    seven_to_twelve = JX("ML Engineer", country="India", body="Exp: 7 to 12yrs")
+    assert seven_to_twelve.experience_min == 7
+    assert job_matches(seven_to_twelve, c) is False  # disappears from results
+    ok = JX("ML Engineer", country="India", body="0-2 years experience")
+    assert job_matches(ok, c) is True
+
+
+def test_senior_request_excludes_entry():
+    c = parse_query("Senior ML Engineer India")
+    assert c.seniority == "senior"
+    assert experience_matches(J("ML Engineer", exp_min=0, exp_max=2, sen="entry"), c) is False

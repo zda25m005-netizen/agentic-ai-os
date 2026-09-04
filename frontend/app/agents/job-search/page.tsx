@@ -40,6 +40,7 @@ export default function JobSearchAgentPage() {
 
   const [text, setText] = useState("");
   const [quick, setQuick] = useState<Quick>("all");
+  const [exp, setExp] = useState("");            // "" | "0-2" | "3-5" | "6+"  (hard constraint)
   const [sort, setSort] = useState<Sort>("match");
   const [view, setView] = useState<"all" | "saved">("all");
   const [modify, setModify] = useState(false);
@@ -56,13 +57,16 @@ export default function JobSearchAgentPage() {
 
   const criteria = useMemo(() => parseCriteria(query), [query]);
 
-  const search = async () => {
+  // A single search entry point. `expOverride` lets the experience filter re-run
+  // the search so experience stays a BACKEND hard constraint (not a display trick).
+  const search = async (expOverride?: string) => {
     if (!query.trim() || phase === "searching") return;
+    const expValue = typeof expOverride === "string" ? expOverride : exp;
     setPhase("searching"); setError(null); setStep(0); setModify(false);
     const t0 = Date.now();
     timer.current = setInterval(() => setStep((s) => Math.min(s + 1, 4)), 550);
     try {
-      const r = await runJobSearch(query.trim());
+      const r = await runJobSearch(query.trim(), expValue || undefined);
       if (timer.current) clearInterval(timer.current);
       setStep(5);
       setResult(r);
@@ -77,6 +81,8 @@ export default function JobSearchAgentPage() {
       setPhase("results");
     }
   };
+
+  const changeExp = (v: string) => { setExp(v); search(v); };
 
   const onSave = (j: JobListing) => setSaved(toggleSaved(j));
   const onSelect = (j: JobListing) => setSelected((prev) => {
@@ -234,6 +240,13 @@ export default function JobSearchAgentPage() {
                       </button>
                     ))}
                   </div>
+                  <select className="tb-sort" value={exp} onChange={(e) => changeExp(e.target.value)}
+                    title="Experience is a hard filter — re-runs the search">
+                    <option value="">Any experience</option>
+                    <option value="0-2">0–2 years</option>
+                    <option value="3-5">3–5 years</option>
+                    <option value="6+">6+ years</option>
+                  </select>
                   <select className="tb-sort" value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
                     <option value="match">Best match</option>
                     <option value="newest">Newest</option>

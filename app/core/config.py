@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     langfuse_secret_key: str = Field(default="")
     langfuse_host: str = Field(default="https://cloud.langfuse.com")
 
+    # Adzuna job-board API (optional; free key at developer.adzuna.com). When both
+    # are set, the Job Search Agent returns real, country-scoped listings across
+    # all domains/countries. Empty = provider stays off (Greenhouse/Lever only).
+    adzuna_app_id: str = Field(default="")
+    adzuna_app_key: str = Field(default="")
+
     # Serve a locally fine-tuned model (falls back to the API model if missing)
     use_finetuned: bool = Field(default=False)
     finetuned_model_dir: str = Field(default="artifacts/lora-adapter-merged")

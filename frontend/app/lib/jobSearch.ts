@@ -28,6 +28,9 @@ export interface JobListing {
   country: string | null;
   employmentType: string | null;
   experience: string | null;
+  experienceMin: number | null;      // required years, from the posting (if stated)
+  experienceMax: number | null;
+  seniority: string | null;          // "entry" | "senior"
   workplaceType: string | null;      // Remote / Hybrid / Onsite
   salary: string | null;             // null = not disclosed
   salaryType: "disclosed" | "estimated" | null;
@@ -142,6 +145,7 @@ export function criteriaSummary(c: JobCriteria): string {
 interface RawJob {
   id: string; title: string; company: string; location: string | null; country: string | null;
   employment_type: string | null; experience: string | null; workplace_type: string | null;
+  experience_min: number | null; experience_max: number | null; seniority: string | null;
   salary: string | null; salary_type: string | null; skills: string[]; description: string;
   posted_at: string | null; source: string; source_url: string | null; application_url: string;
   match_score: number | null; match_breakdown: Record<string, number>; sources: string[];
@@ -171,6 +175,7 @@ function toListing(r: RawJob): JobListing {
   return {
     id: r.id, title: r.title, company: r.company, location: r.location, country: r.country,
     employmentType: r.employment_type, experience: r.experience, workplaceType: r.workplace_type,
+    experienceMin: r.experience_min ?? null, experienceMax: r.experience_max ?? null, seniority: r.seniority ?? null,
     salary: r.salary, salaryType: (r.salary_type as JobListing["salaryType"]) ?? (r.salary ? "disclosed" : null),
     skills: r.skills || [], description: r.description || "",
     postedAt: r.posted_at, source: r.source, sourceUrl: r.source_url, applicationUrl: r.application_url,
@@ -179,12 +184,13 @@ function toListing(r: RawJob): JobListing {
 }
 
 // The raw query is the source of truth — the backend parses + strictly validates.
-export async function runJobSearch(query: string): Promise<JobSearchResult> {
+// `experience` (e.g. "0-2", "3-5", "6+") is an explicit hard constraint from the UI filter.
+export async function runJobSearch(query: string, experience?: string): Promise<JobSearchResult> {
   const res = await fetch(`${API}/jobs/search`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     cache: "no-store",
-    body: JSON.stringify({ query, limit: 200 }),
+    body: JSON.stringify({ query, limit: 200, experience: experience || null }),
   });
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
