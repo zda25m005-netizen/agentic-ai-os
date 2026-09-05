@@ -33,12 +33,37 @@ export interface Scholarship {
   is_verified: boolean;
   last_verified_at: string | null;
   sources: string[];
+  opportunity_type: string;
   match_score: number | null;
   match_breakdown: Record<string, number>;
   match_reason: string | null;
   eligibility_status: string | null;
   eligibility_reasons: string[];
+  eligibility_checks: EligibilityCheck[];
   tracking_status?: string;
+}
+
+export interface EligibilityCheck {
+  requirement: string;
+  required_value: string | null;
+  user_value: string | null;
+  status: string; // PASS | FAIL | UNKNOWN | NOT_APPLICABLE
+  explanation: string;
+}
+
+export interface StudentProfile {
+  nationality: string | null;
+  degree: string | null;
+  field: string | null;
+  field_tags: string[];
+  gpa: number | null;
+  gpa_scale: number | null;
+  graduation_year: number | null;
+  ielts: number | null;
+  toefl: number | null;
+  experience_years: number | null;
+  skills: string[];
+  preferred_countries: string[];
 }
 
 export interface Intent {
@@ -74,6 +99,10 @@ export interface SearchResult {
   total_fetched: number;
   total_after_filter: number;
   summary: Record<string, number>;
+  country_facets: { country: string; count: number }[];
+  funding_facets: { funding: string; count: number }[];
+  profile_used: StudentProfile | null;
+  profile_incomplete: boolean;
 }
 
 async function post<T>(path: string, body: unknown): Promise<T> {
@@ -153,7 +182,43 @@ export function eligibilityLabel(s: string | null): { text: string; kind: string
     eligible: { text: "Eligible", kind: "ok" },
     likely: { text: "Likely eligible", kind: "likely" },
     unclear: { text: "Eligibility unclear", kind: "unclear" },
+    insufficient: { text: "Add profile to check", kind: "unclear" },
     not_eligible: { text: "Not eligible", kind: "no" },
   };
   return map[s || "unclear"] || map.unclear;
+}
+
+export function checkMark(status: string): { sym: string; kind: string } {
+  return {
+    PASS: { sym: "✓", kind: "ok" }, FAIL: { sym: "✕", kind: "no" },
+    UNKNOWN: { sym: "⚠", kind: "unclear" }, NOT_APPLICABLE: { sym: "–", kind: "na" },
+  }[status] || { sym: "–", kind: "na" };
+}
+
+export function opportunityLabel(t: string): string {
+  return {
+    scholarship: "Scholarship", fellowship: "Fellowship",
+    funded_phd_position: "Funded PhD position", research_position: "Research position", grant: "Grant",
+  }[t] || t;
+}
+
+// --- student profile --------------------------------------------------------
+export async function getProfile(): Promise<StudentProfile> {
+  const r = await fetch(`${API}/scholarships/profile`, { cache: "no-store" });
+  return r.json();
+}
+export async function saveProfile(p: StudentProfile): Promise<StudentProfile> {
+  return post<StudentProfile>("/scholarships/profile", p);
+}
+export async function prefillProfile(): Promise<StudentProfile | null> {
+  const r = await fetch(`${API}/scholarships/profile/prefill`, { method: "POST" });
+  if (!r.ok) return null;
+  return r.json();
+}
+export async function clearProfile(): Promise<void> {
+  await fetch(`${API}/scholarships/profile`, { method: "DELETE" });
+}
+export function profileIsEmpty(p: StudentProfile | null): boolean {
+  if (!p) return true;
+  return !(p.nationality || p.degree || p.field || p.gpa || p.ielts || p.experience_years || (p.skills && p.skills.length));
 }

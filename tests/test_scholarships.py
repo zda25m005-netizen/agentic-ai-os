@@ -2,13 +2,35 @@
 
 import asyncio
 
+from app.scholarships import profile as pstore
 from app.scholarships import store
 from app.scholarships.catalog import catalog
-from app.scholarships.eligibility import eligibility_status
+from app.scholarships.eligibility import eligibility_status, evaluate
 from app.scholarships.filtering import dedup, passes_hard
-from app.scholarships.models import FilterSpec, Scholarship
+from app.scholarships.models import FilterSpec, Scholarship, StudentProfile
 from app.scholarships.parser import intent_from_filters, parse_query
-from app.scholarships.search import run_search, summarize
+from app.scholarships.search import facets, run_search, summarize
+
+
+def _sch(**kw):
+    base = dict(
+        id="x",
+        title="T",
+        provider="P",
+        country="United Kingdom",
+        countries=["United Kingdom"],
+        degree_levels=["master"],
+        fields=["all"],
+        funding_type="fully_funded",
+        nationality_eligibility="international",
+        application_url="https://x",
+    )
+    base.update(kw)
+    return Scholarship(**base)
+
+
+def _checks(sch, prof):
+    return {c.requirement: c.status for c in evaluate(sch, prof)[1]}
 
 
 # --- parsing ----------------------------------------------------------------
@@ -173,3 +195,101 @@ def test_saved_store_roundtrip(tmp_path):
     assert store.set_status("sch-1", "Applied") is True
     assert store.list_saved()[0]["tracking_status"] == "Applied"
     assert store.remove("sch-1") is True and store.list_saved() == []
+
+
+# --- profile-driven eligibility engine (never fabricates) -------------------
+def test_no_profile_specific_scheme_is_insufficient():
+    assert evaluate(_sch(nationality_eligibility="specific"), StudentProfile())[0] == "insufficient"
+
+
+def test_missing_nationality_is_unknown_not_pass():
+    checks = _checks(_sch(nationality_eligibility="commonwealth"), StudentProfile(degree="master"))
+    assert checks["Nationality"] == "UNKNOWN"
+
+
+def test_matching_and_nonmatching_nationality():
+    s = _sch(nationality_eligibility="commonwealth")
+    assert _checks(s, StudentProfile(nationality="India"))["Nationality"] == "PASS"
+    assert _checks(s, StudentProfile(nationality="United States"))["Nationality"] == "FAIL"
+    assert evaluate(s, StudentProfile(nationality="United States"))[0] == "not_eligible"
+
+
+def test_gpa_unknown_below_above():
+    s = _sch(min_gpa=8.0, gpa_scale=10)
+    assert _checks(s, StudentProfile(degree="master"))["Minimum GPA"] == "UNKNOWN"
+    assert (
+        _checks(s, StudentProfile(degree="master", gpa=6.5, gpa_scale=10))["Minimum GPA"] == "FAIL"
+    )
+    assert (
+        _checks(s, StudentProfile(degree="master", gpa=8.7, gpa_scale=10))["Minimum GPA"] == "PASS"
+    )
+
+
+def test_gpa_scale_normalization():
+    s = _sch(min_gpa=3.0, gpa_scale=4)
+    # 8.5/10 -> 3.4/4 -> PASS
+    assert (
+        _checks(s, StudentProfile(degree="master", gpa=8.5, gpa_scale=10))["Minimum GPA"] == "PASS"
+    )
+
+
+def test_ielts_and_experience_checks():
+    s = _sch(min_ielts=7.0, min_work_experience_years=2)
+    p = StudentProfile(degree="master", ielts=6.0, experience_years=1)
+    ch = _checks(s, p)
+    assert ch["IELTS"] == "FAIL" and ch["Work experience"] == "FAIL"
+    assert _checks(s, StudentProfile(degree="master"))["IELTS"] == "UNKNOWN"
+
+
+def test_field_match_and_mismatch():
+    s = _sch(fields=["ai", "cs"])
+    assert _checks(s, StudentProfile(field_tags=["ai"]))["Study field"] == "PASS"
+    assert _checks(s, StudentProfile(field_tags=["law"]))["Study field"] == "FAIL"
+    assert _checks(s, StudentProfile())["Study field"] == "UNKNOWN"
+
+
+def test_all_known_pass_is_eligible():
+    s = _sch(min_gpa=8.0, gpa_scale=10, fields=["ai"])
+    p = StudentProfile(
+        nationality="India", degree="master", field_tags=["ai"], gpa=8.7, gpa_scale=10
+    )
+    assert evaluate(s, p)[0] == "eligible"
+
+
+# --- resume -> student profile + merge --------------------------------------
+def test_profile_from_resume_maps_field_and_experience():
+    p = pstore.from_resume(
+        {
+            "skills": ["Python", "PyTorch"],
+            "industries": ["Artificial Intelligence"],
+            "education": ["M.Tech in AI"],
+            "experience_years": 1,
+        }
+    )
+    assert p.degree == "master" and "ai" in p.field_tags and p.experience_years == 1
+
+
+def test_merge_query_facts_fill_gaps():
+    eff = pstore.merge_effective(parse_query("PhD in Norway for Indian students"), None, None)
+    assert eff.nationality == "India" and eff.degree == "phd"
+
+
+def test_profile_store_roundtrip(tmp_path):
+    pstore.DB_PATH = tmp_path / "p.db"
+    assert pstore.load() is None
+    pstore.save(StudentProfile(nationality="India", degree="master", gpa=8.7))
+    assert pstore.load().nationality == "India"
+    assert pstore.clear() is True and pstore.load() is None
+
+
+# --- facets + opportunity type ----------------------------------------------
+def test_facets_from_results():
+    schs, _, _ = asyncio.run(run_search(parse_query("fully funded masters")))
+    cfac, ffac = facets(schs)
+    assert sum(f["count"] for f in cfac) == len(schs)
+    assert all("country" in f and "count" in f for f in cfac)
+
+
+def test_norway_is_funded_phd_position():
+    schs, _, _ = asyncio.run(run_search(parse_query("PhD scholarships in Norway")))
+    assert schs and schs[0].opportunity_type == "funded_phd_position"

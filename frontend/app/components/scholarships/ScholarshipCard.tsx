@@ -1,6 +1,6 @@
 "use client";
 import Icon from "../Icon";
-import { Scholarship, degreeLabel, eligibilityLabel, fundingLabel } from "../../lib/scholarshipsApi";
+import { Scholarship, degreeLabel, eligibilityLabel, fundingLabel, opportunityLabel } from "../../lib/scholarshipsApi";
 
 export default function ScholarshipCard({ s, saved, onOpen, onSave }: {
   s: Scholarship; saved: boolean; onOpen: (s: Scholarship) => void; onSave: (s: Scholarship) => void;
@@ -20,6 +20,7 @@ export default function ScholarshipCard({ s, saved, onOpen, onSave }: {
       <div className="sc-badges">
         <span className={`fund ${s.funding_type}`}>{fundingLabel(s.funding_type)}</span>
         <span className={`elig ${elig.kind}`}>{elig.text}</span>
+        {s.opportunity_type !== "scholarship" && <span className="mtag">{opportunityLabel(s.opportunity_type)}</span>}
         {meta.map((m) => <span className="mtag" key={m}>{m}</span>)}
       </div>
       {s.match_reason && <div className="sc-reason">{s.match_reason}</div>}

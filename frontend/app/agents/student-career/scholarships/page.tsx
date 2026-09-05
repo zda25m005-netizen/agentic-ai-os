@@ -5,11 +5,13 @@ import "../../../scholarships.css";
 import Icon from "../../../components/Icon";
 import ScholarshipCard from "../../../components/scholarships/ScholarshipCard";
 import ScholarshipDrawer from "../../../components/scholarships/ScholarshipDrawer";
+import StudentProfilePanel from "../../../components/scholarships/StudentProfilePanel";
 import {
   searchByQuery, searchByFilters, filtersFromIntent, listSaved, saveScholarship, removeSaved,
+  getProfile,
   COUNTRY_OPTIONS, DEGREE_OPTIONS, FUNDING_OPTIONS, FIELD_OPTIONS, TYPE_OPTIONS, INTAKE_OPTIONS,
   EXAMPLES, degreeLabel, fundingLabel,
-  Scholarship, SearchResult, FilterSpec,
+  Scholarship, SearchResult, FilterSpec, StudentProfile,
 } from "../../../lib/scholarshipsApi";
 import { getResume } from "../../../lib/resumeApi";
 
@@ -31,10 +33,12 @@ export default function ScholarshipsPage() {
   const [open, setOpen] = useState<Scholarship | null>(null);
   const [hasResume, setHasResume] = useState(false);
   const [onlyEligible, setOnlyEligible] = useState(false);
+  const [profile, setProfile] = useState<StudentProfile | null>(null);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => { listSaved().then(setSavedList).catch(() => {}); }, []);
   useEffect(() => { getResume().then((r) => setHasResume(!!r.exists)).catch(() => {}); }, []);
+  useEffect(() => { getProfile().then(setProfile).catch(() => {}); }, []);
   useEffect(() => () => { if (timer.current) clearInterval(timer.current); }, []);
 
   const savedIds = useMemo(() => new Set(savedList.map((s) => s.id)), [savedList]);
@@ -87,6 +91,12 @@ export default function ScholarshipsPage() {
     else { await saveScholarship(s); setSavedList((l) => [s, ...l]); }
   };
 
+  // Saving/prefilling the profile recomputes eligibility → re-run the last search.
+  const onProfileChange = (p: StudentProfile) => {
+    setProfile(p);
+    if (phase === "results" && !error) applyFilters(active || {});
+  };
+
   const all = result?.scholarships ?? [];
   const base = tab === "saved" ? savedList : all;
   const visible = useMemo(() => {
@@ -123,6 +133,8 @@ export default function ScholarshipsPage() {
             <p className="h-sub">Find scholarships matched to your study goals, eligibility and funding requirements.</p>
           </div>
         </div>
+
+        <StudentProfilePanel profile={profile} onChange={onProfileChange} hasResume={hasResume} />
 
         <div className="qlabel">What are you looking for?</div>
         <div className="box">
@@ -212,14 +224,29 @@ export default function ScholarshipsPage() {
               </div>
             </div>
 
+            {!error && result?.profile_incomplete && tab === "all" && (
+              <div className="incomplete">
+                <Icon name="alert" size={14} style={{ color: "#E0B457" }} />
+                Add your profile above to check eligibility against each scholarship&apos;s real requirements — right now they show as “verify”.
+              </div>
+            )}
+
             {!error && tab === "all" && all.length > 0 && (
               <>
                 <div className="summary">
                   <div className="scard2"><div className="val">{all.length}</div><div className="lbl">Scholarships</div></div>
                   <div className="scard2"><div className="val">{sm.fully_funded ?? 0}</div><div className="lbl">Fully funded</div></div>
                   <div className="scard2"><div className="val">{sm.eligible ?? 0}</div><div className="lbl">Likely eligible</div></div>
-                  <div className="scard2"><div className="val">{new Set(all.map((s) => s.country)).size}</div><div className="lbl">Countries</div></div>
+                  <div className="scard2"><div className="val">{(result?.country_facets ?? []).length}</div><div className="lbl">Countries</div></div>
                 </div>
+                {(result?.country_facets ?? []).length > 1 && (
+                  <div className="facets">
+                    {result!.country_facets.map((f) => (
+                      <button key={f.country} className={`qchip ${(active?.countries || []).includes(f.country) ? "on" : ""}`}
+                        onClick={() => toggleCountry(f.country)}>{f.country} · {f.count}</button>
+                    ))}
+                  </div>
+                )}
                 <div className="toolbar">
                   <button className={`qchip ${onlyEligible ? "on" : ""}`} onClick={() => setOnlyEligible((v) => !v)}>Eligible for you</button>
                   <span style={{ flex: 1 }} />

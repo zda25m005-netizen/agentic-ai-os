@@ -1,7 +1,7 @@
 "use client";
 import Icon from "../Icon";
 import {
-  Scholarship, degreeLabel, eligibilityLabel, fundingLabel, setTrackingStatus,
+  Scholarship, degreeLabel, eligibilityLabel, fundingLabel, setTrackingStatus, checkMark, opportunityLabel,
 } from "../../lib/scholarshipsApi";
 
 const LABELS: Record<string, string> = {
@@ -30,6 +30,7 @@ export default function ScholarshipDrawer({ s, saved, onClose, onSave }: {
         <div className="sc-badges" style={{ marginBottom: 14 }}>
           <span className={`fund ${s.funding_type}`}>{fundingLabel(s.funding_type)}</span>
           <span className={`elig ${elig.kind}`}>{elig.text}</span>
+          {s.opportunity_type !== "scholarship" && <span className="mtag">{opportunityLabel(s.opportunity_type)}</span>}
           {s.degree_levels.map((d) => <span className="mtag" key={d}>{degreeLabel(d)}</span>)}
         </div>
 
@@ -47,10 +48,26 @@ export default function ScholarshipDrawer({ s, saved, onClose, onSave }: {
           </div>
         )}
 
-        <div className="sec-h" style={{ margin: "16px 0 8px" }}>Eligibility checklist</div>
-        <ul className="elig-list">
-          {s.eligibility_reasons.map((r, idx) => <li key={idx}>{r}</li>)}
-        </ul>
+        <div className="sec-h" style={{ margin: "16px 0 8px" }}>Why this matches you</div>
+        <div className="checks">
+          {s.eligibility_checks.filter((c) => c.status !== "NOT_APPLICABLE").map((c, idx) => {
+            const m = checkMark(c.status);
+            return (
+              <div className="chk" key={idx}>
+                <span className={`chk-m ${m.kind}`}>{m.sym}</span>
+                <span className="chk-body">
+                  <b>{c.requirement}</b>
+                  {c.required_value ? <span className="chk-req"> · needs {c.required_value}</span> : null}
+                  {c.user_value ? <span className="chk-you"> · you: {c.user_value}</span> : null}
+                  {c.explanation ? <div className="chk-exp">{c.explanation}</div> : null}
+                </span>
+              </div>
+            );
+          })}
+          {s.eligibility_checks.every((c) => c.status === "NOT_APPLICABLE") && (
+            <div className="chk-exp">No structured requirements published — verify on the official page.</div>
+          )}
+        </div>
 
         <div className="crow" style={{ margin: "16px 0" }}>
           <span className="k">Funding</span><span className="v">{fundingLabel(s.funding_type)}</span>

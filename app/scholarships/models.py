@@ -8,7 +8,53 @@ from pydantic import BaseModel, Field
 DEGREE_LEVELS = ["bachelor", "master", "phd", "postdoc", "diploma"]
 FUNDING_TYPES = ["fully_funded", "partial", "tuition", "stipend"]
 NATIONALITY_TAGS = ["international", "commonwealth", "developing", "eu", "specific"]
-ELIGIBILITY_STATUSES = ["eligible", "likely", "unclear", "not_eligible"]
+# eligible | likely | unclear | insufficient | not_eligible
+ELIGIBILITY_STATUSES = ["eligible", "likely", "unclear", "insufficient", "not_eligible"]
+OPPORTUNITY_TYPES = [
+    "scholarship",
+    "fellowship",
+    "funded_phd_position",
+    "research_position",
+    "grant",
+]
+
+
+class EligibilityCheck(BaseModel):
+    requirement: str
+    required_value: str | None = None
+    user_value: str | None = None
+    status: str  # PASS | FAIL | UNKNOWN | NOT_APPLICABLE
+    explanation: str = ""
+
+
+class StudentProfile(BaseModel):
+    """The USER's information — never mixed into scholarship source data."""
+
+    nationality: str | None = None
+    degree: str | None = None  # highest/current: bachelor|master|phd
+    field: str | None = None  # display
+    field_tags: list[str] = Field(default_factory=list)
+    gpa: float | None = None
+    gpa_scale: float | None = None  # e.g. 10 or 4
+    graduation_year: int | None = None
+    ielts: float | None = None
+    toefl: float | None = None
+    experience_years: float | None = None
+    skills: list[str] = Field(default_factory=list)
+    preferred_countries: list[str] = Field(default_factory=list)
+
+    def is_empty(self) -> bool:
+        return not any(
+            [
+                self.nationality,
+                self.degree,
+                self.field,
+                self.gpa,
+                self.ielts,
+                self.experience_years,
+                self.skills,
+            ]
+        )
 
 
 class Scholarship(BaseModel):
@@ -34,6 +80,12 @@ class Scholarship(BaseModel):
     academic_requirements: str | None = None
     language_requirements: str | None = None
     work_experience_requirement: str | None = None
+    # structured, checkable requirements (null = the source doesn't state it)
+    min_gpa: float | None = None
+    gpa_scale: float | None = None
+    min_ielts: float | None = None
+    min_work_experience_years: int | None = None
+    opportunity_type: str = "scholarship"  # OPPORTUNITY_TYPES
     deadline: str | None = None  # ISO date when reliably known, else None
     deadline_note: str | None = None  # e.g. "Annual — typically Nov; verify on official page"
     intake: list[str] = Field(default_factory=lambda: ["annual"])
@@ -54,6 +106,7 @@ class Scholarship(BaseModel):
     match_reason: str | None = None
     eligibility_status: str | None = None
     eligibility_reasons: list[str] = Field(default_factory=list)
+    eligibility_checks: list[EligibilityCheck] = Field(default_factory=list)
 
 
 class ScholarshipIntent(BaseModel):
@@ -96,3 +149,7 @@ class ScholarshipSearchResponse(BaseModel):
     total_fetched: int
     total_after_filter: int
     summary: dict[str, int] = Field(default_factory=dict)
+    country_facets: list[dict] = Field(default_factory=list)  # [{country, count}]
+    funding_facets: list[dict] = Field(default_factory=list)
+    profile_used: StudentProfile | None = None
+    profile_incomplete: bool = False

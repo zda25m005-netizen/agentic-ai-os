@@ -48,6 +48,28 @@
 .sch .qchip:hover { background: var(--hcard-hover); color: var(--htext); }
 .sch .qchip.on { background: rgba(110,168,255,0.1); border-color: rgba(110,168,255,0.35); color: #C9DCFF; }
 
+/* student profile panel */
+.sch .profile { background: var(--hcard); border: 1px solid var(--hborder); border-radius: 12px; padding: 14px 16px; margin: 18px 0 4px; }
+.sch .profile-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.sch .profile-empty { font-size: 12.5px; color: var(--hmuted); margin-top: 8px; line-height: 1.55; max-width: 680px; }
+.sch .profile-summary { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.sch .pv { font-size: 12px; color: var(--htext); border: 1px solid var(--hborder); border-radius: 6px; padding: 3px 9px; }
+.sch .pgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 12px; }
+.sch .pgrid label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--hmuted); }
+.sch .pgrid input, .sch .pgrid select { height: 32px; background: var(--hbg); border: 1px solid var(--hborder); border-radius: 8px; color: var(--htext); font-size: 12.5px; font-family: inherit; padding: 0 9px; outline: none; }
+.sch .pgrid input:focus, .sch .pgrid select:focus { border-color: var(--hborder-strong); }
+.sch .incomplete { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--htext2); background: rgba(224,180,87,0.06); border: 1px solid rgba(224,180,87,0.25); border-radius: 9px; padding: 10px 14px; margin-bottom: 14px; }
+.sch .facets { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+
+/* eligibility checks */
+.sch .checks { display: flex; flex-direction: column; gap: 8px; }
+.sch .chk { display: flex; gap: 9px; align-items: flex-start; }
+.sch .chk-m { width: 16px; font-size: 13px; line-height: 1.4; flex-shrink: 0; }
+.sch .chk-m.ok { color: #7DE0A8; } .sch .chk-m.no { color: #F0A98C; } .sch .chk-m.unclear { color: #E0B457; } .sch .chk-m.na { color: var(--hmuted); }
+.sch .chk-body { font-size: 12.5px; color: var(--htext); }
+.sch .chk-req, .sch .chk-you { color: var(--htext2); font-size: 11.5px; }
+.sch .chk-exp { font-size: 11.5px; color: var(--hmuted); margin-top: 2px; }
+
 /* progress */
 .sch .progress { background: var(--hcard); border: 1px solid var(--hborder); border-radius: 12px; padding: 18px 20px; margin-top: 18px; }
 .sch .pstep { display: flex; align-items: center; gap: 12px; padding: 7px 0; font-size: 13px; }
