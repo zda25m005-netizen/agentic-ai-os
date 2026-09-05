@@ -58,6 +58,8 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.ruff.lint.per-file-ignores]
 # LaTeX template literals: line length is not meaningful in embedded .tex source.
 "app/exec/latex/render.py" = ["E501"]
+# Curated data file: long official URLs and program descriptions are not wrappable.
+"app/scholarships/catalog.py" = ["E501"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

@@ -18,6 +18,7 @@ from app.api.jobs import router as jobs_router
 from app.api.missions import router as missions_router
 from app.api.reports import router as reports_router
 from app.api.resume import router as resume_router
+from app.api.scholarships import router as scholarships_router
 from app.core import auth, llm
 from app.core.config import get_settings
 from app.db import session as db
@@ -87,6 +88,7 @@ app.include_router(anomaly_router)
 app.include_router(reports_router)
 app.include_router(jobs_router)
 app.include_router(resume_router)
+app.include_router(scholarships_router)
 # Versioned API surface (same routers under /v1) for stable clients.
 app.include_router(missions_router, prefix="/v1")
 app.include_router(anomaly_router, prefix="/v1")
