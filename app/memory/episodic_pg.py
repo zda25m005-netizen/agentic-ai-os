@@ -4,6 +4,7 @@ Mirrors the SQLite ``EpisodicMemory`` API — save / recent / search / count —
 but async, over a sessionmaker. Returns the same ``Episode`` dataclass, so
 ``MemoryManager`` treats either backend identically.
 """
+
 from __future__ import annotations
 
 import time

@@ -13,6 +13,7 @@ memory the mission runtime can use, all in-memory and dependency-free:
 `retrieve` searches every layer and ranks by importance then recency. Importance
 scoring, consolidation, decay, and conflict resolution land on Day 19.
 """
+
 from __future__ import annotations
 
 import time
@@ -37,7 +38,7 @@ class MemoryItem:
     tags: tuple[str, ...] = ()
     importance: float = 1.0
     created_at: float = field(default_factory=time.time)
-    last_access: float = 0.0        # set to created_at on first use
+    last_access: float = 0.0  # set to created_at on first use
     access_count: int = 0
 
     def __post_init__(self) -> None:
@@ -62,8 +63,14 @@ class _Store:
         self._items: list[MemoryItem] = []
         self._next_id = 1
 
-    def _add(self, content: str, *, key: str | None = None,
-             tags: tuple[str, ...] = (), importance: float = 1.0) -> MemoryItem:
+    def _add(
+        self,
+        content: str,
+        *,
+        key: str | None = None,
+        tags: tuple[str, ...] = (),
+        importance: float = 1.0,
+    ) -> MemoryItem:
         item = MemoryItem(self._next_id, self._type, content, key, tuple(tags), importance)
         self._next_id += 1
         self._items.append(item)
@@ -91,11 +98,11 @@ class WorkingMemory(_Store):
     def note(self, content: str, tags: tuple[str, ...] = ()) -> MemoryItem:
         item = self._add(content, tags=tags)
         if len(self._items) > self.capacity:  # keep only the most recent
-            self._items = self._items[-self.capacity:]
+            self._items = self._items[-self.capacity :]
         return item
 
     def recent(self, n: int | None = None) -> list[MemoryItem]:
-        return list(self._items[-(n or self.capacity):])
+        return list(self._items[-(n or self.capacity) :])
 
     def clear(self) -> None:
         self._items = []
@@ -104,8 +111,9 @@ class WorkingMemory(_Store):
 class EpisodicStore(_Store):
     _type = MemoryType.EPISODIC
 
-    def record(self, content: str, tags: tuple[str, ...] = (),
-               importance: float = 1.0) -> MemoryItem:
+    def record(
+        self, content: str, tags: tuple[str, ...] = (), importance: float = 1.0
+    ) -> MemoryItem:
         return self._add(content, tags=tags, importance=importance)
 
     def recent(self, n: int = 5) -> list[MemoryItem]:
@@ -145,8 +153,9 @@ class ProceduralStore(_Store):
 class OrganizationalStore(_Store):
     _type = MemoryType.ORGANIZATIONAL
 
-    def share(self, content: str, tags: tuple[str, ...] = (),
-              importance: float = 1.0) -> MemoryItem:
+    def share(
+        self, content: str, tags: tuple[str, ...] = (), importance: float = 1.0
+    ) -> MemoryItem:
         return self._add(content, tags=tags, importance=importance)
 
 
@@ -159,8 +168,7 @@ class MultiLayerMemory:
     organizational: OrganizationalStore = field(default_factory=OrganizationalStore)
 
     def stores(self) -> list[_Store]:
-        return [self.working, self.episodic, self.semantic,
-                self.procedural, self.organizational]
+        return [self.working, self.episodic, self.semantic, self.procedural, self.organizational]
 
     def retrieve(self, query: str, limit: int = 5) -> list[MemoryItem]:
         """Unified retrieval across all layers, ranked by importance then recency."""

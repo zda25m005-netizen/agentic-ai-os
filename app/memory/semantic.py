@@ -5,6 +5,7 @@ Each run is embedded and stored in a Qdrant collection. Given a new goal,
 work even when the wording differs. Complements the keyword search in
 episodic memory.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

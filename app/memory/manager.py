@@ -6,6 +6,7 @@ formatted for injection into a planner prompt. A process-wide default lets
 graph nodes use memory without threading it through every call, and it's
 settable for tests.
 """
+
 from __future__ import annotations
 
 import inspect

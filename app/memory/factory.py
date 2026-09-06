@@ -3,6 +3,7 @@
 Returns the SQLite store (default, zero-setup) or the Postgres store, so the
 rest of the app depends on the interface, not the backend.
 """
+
 from __future__ import annotations
 
 from app.core.config import get_settings

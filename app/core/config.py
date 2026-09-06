@@ -40,6 +40,9 @@ class Settings(BaseSettings):
 
     # Long-term memory backend: "sqlite" (default) or "postgres"
     memory_backend: str = Field(default="sqlite")
+    # Memory policy engine: "deterministic" (default, safe fallback) | "llm" | "rl".
+    # llm/rl are experimental and gated; deterministic must always work standalone.
+    memory_policy_mode: str = Field(default="deterministic")
 
     # Langfuse tracing (optional; export runs when both keys are set)
     langfuse_public_key: str = Field(default="")

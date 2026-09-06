@@ -5,6 +5,7 @@ history it can review, search, and later recall semantically (Day 39).
 Backed by SQLite (stdlib) so it persists across restarts with no server;
 point MEMORY_DB_PATH at a file to keep it, or use ':memory:' for ephemeral.
 """
+
 from __future__ import annotations
 
 import sqlite3

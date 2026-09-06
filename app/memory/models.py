@@ -4,6 +4,7 @@
 shape as the SQLite store's rows (goal, answer, timestamp), so the two backends
 are interchangeable behind the memory interface.
 """
+
 from __future__ import annotations
 
 from sqlalchemy import Float, Integer, Text

@@ -16,6 +16,7 @@ contradictory facts. `MemoryDynamics` layers those behaviors over a
 
 All deterministic given an injected `now`, so it's fully unit-testable.
 """
+
 from __future__ import annotations
 
 import math
@@ -27,7 +28,7 @@ from app.memory.multilayer import MemoryItem, MemoryType, MultiLayerMemory
 @dataclass
 class MemoryDynamics:
     memory: MultiLayerMemory
-    decay_rate: float = 0.05          # per hour
+    decay_rate: float = 0.05  # per hour
     access_boost: float = 0.5
     consolidate_threshold: float = 2.0
     prune_threshold: float = 0.1
@@ -68,7 +69,8 @@ class MemoryDynamics:
         for item in self.memory.working.all():
             if item.importance >= self.consolidate_threshold:
                 self.memory.episodic.record(
-                    item.content, tags=item.tags, importance=item.importance)
+                    item.content, tags=item.tags, importance=item.importance
+                )
                 promoted.append(item)
             else:
                 remaining.append(item)
