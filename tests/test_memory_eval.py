@@ -17,9 +17,18 @@ def test_no_stale_leak_on_temporal_update():
     assert rows["additive_preferences"]["recall"] == 1.0  # both kept
 
 
-def test_ablation_marks_unbuilt_as_planned():
+def test_ablation_runs_D_and_marks_rl_planned():
     abl = run()
-    assert abl["status"]["D_lifecycle"] == "planned"
+    assert abl["status"]["D_lifecycle"] == "implemented"
     assert abl["status"]["F_rl_policy"] == "planned"
-    assert "C_orchestrator" in abl["results"]  # only executed configs report results
-    assert "D_lifecycle" not in abl["results"]
+    assert "C_orchestrator" in abl["results"] and "D_lifecycle" in abl["results"]
+    assert "E_graph" not in abl["results"]  # unbuilt configs report no numbers
+
+
+def test_lifecycle_config_reduces_irrelevant_leak():
+    from app.memory.eval.harness import evaluate
+
+    c = evaluate("orchestrator")["aggregate"]
+    d = evaluate("lifecycle")["aggregate"]
+    assert d["avg_recall"] == 1.0 and d["total_stale_leak"] == 0
+    assert d["total_irrelevant_leak"] <= c["total_irrelevant_leak"]

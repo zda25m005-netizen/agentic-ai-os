@@ -16,8 +16,9 @@ No paper benchmarks are reproduced or claimed.
 | `/memory` HTTP API + Memory UI on real records (no more sample data) | **Implemented** |
 | Eval harness (local LongMemEval-style fixtures) + metrics + ablation runner | **Implemented** |
 | `MEMORY_POLICY_MODE` config (`deterministic` default) | **Implemented** |
-| Mem0-style candidate extraction from raw conversation (LLM) | **Planned** (config D) |
-| MemGPT-style context controller wired into the agent loop | **Planned** |
+| Mem0-style lifecycle (extract candidates → retrieve-similar → resolve) wired into `finalize_node` | **Implemented** (config D) |
+| MemGPT-style context controller (budget/prioritize/evict) wired into `planner_node` | **Implemented** (config D) |
+| Optional LLM candidate extraction (`MEMORY_POLICY_MODE=llm`, deterministic fallback) | **Implemented** |
 | Graph memory (entity/relationship, reuse `app/graph` Neo4j client) | **Planned** (config E) |
 | LLM / RL (GRPO) memory policy + training + RL env | **Planned / Experimental** (config F) |
 
@@ -38,6 +39,30 @@ flowchart TD
     end
     O -.wraps.-> existing
 ```
+
+## Agent wiring (config D)
+
+The Mem0 lifecycle and MemGPT context controller are wired into the **real LangGraph
+execution path**, not exposed as standalone classes:
+
+```mermaid
+flowchart LR
+    P[planner_node] -->|ContextController.build| O[(MemoryOrchestrator)]
+    O -->|budgeted advisory context| P
+    P --> E[executor] --> CR[critic] --> F[finalize_node]
+    F -->|episodic run log| O
+    F -->|extract_candidates → resolve_and_ingest| O
+```
+
+- **`planner_node`** — when an orchestrator is installed, a `ContextController`
+  (`app/memory/context.py`) retrieves + budgets memory into an advisory block injected
+  into the plan prompt. The goal is never overridden; over-long items are clipped (evicted).
+- **`finalize_node`** — logs the run episodically, then runs the Mem0 lifecycle
+  (`app/memory/lifecycle.py`): extract candidate facts from goal+answer, retrieve similar
+  memories, and resolve to ADD / UPDATE(supersede) / NOOP(reinforce).
+- **Safe fallback.** When no orchestrator is installed (`MEMORY_POLICY_MODE=off`, and every
+  existing test), both nodes fall back to the legacy `MemoryManager` path — so all prior
+  behavior and tests are preserved.
 
 ## Guarantees (encoded + tested)
 
@@ -61,14 +86,23 @@ flowchart TD
 
 `python -c "from app.memory.eval.ablation import run; import json; print(json.dumps(run(), default=str, indent=2))"`
 
-Runs the local fixtures for **A (no memory)** vs **C (orchestrator)**. B requires a live Qdrant
-and is skipped offline; D/E/F are unbuilt and report **no** numbers. Metrics: precision, recall,
-stale-leak, irrelevant-leak, retrieved tokens.
+Runs the local fixtures for **A (no memory)**, **C (orchestrator)**, and **D (orchestrator +
+Mem0 lifecycle + MemGPT context controller)**. B requires a live Qdrant and is skipped offline;
+E/F are unbuilt and report **no** numbers. Metrics: precision, recall, stale-leak,
+irrelevant-leak, retrieved tokens.
+
+On the local fixtures, config D improves precision over C (0.708 → 0.875) and reduces
+irrelevant-leak (3 → 1) at recall 1.0 with zero stale leaks. These are small hand-written
+fixtures, **not** the published LongMemEval benchmark — no paper numbers are claimed.
 
 ## Files
 
 - `app/memory/records.py`, `app/memory/store.py`, `app/memory/orchestrator.py`
-- `app/api/memory.py` (router), registered in `app/api/main.py`
+- `app/memory/lifecycle.py` (Mem0), `app/memory/context.py` (MemGPT) — wired into
+  `app/agents/planner.py` and `app/agents/graph.py`
+- `app/api/memory.py` (router), registered in `app/api/main.py` (orchestrator installed in lifespan)
 - `app/memory/eval/{dataset,metrics,harness,ablation}.py`
 - `frontend/app/lib/memoryApi.ts` (now calls `/memory`)
-- `tests/test_memory_orchestrator.py`, `tests/test_memory_eval.py`
+- `tests/test_memory_orchestrator.py`, `tests/test_memory_eval.py`,
+  `tests/test_memory_lifecycle.py`, `tests/test_memory_context.py`,
+  `tests/test_memory_agent_wiring.py`

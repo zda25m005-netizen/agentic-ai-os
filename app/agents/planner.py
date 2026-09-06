@@ -6,6 +6,7 @@ recalled and injected as context so the planner can reuse prior work.
 Parsing is defensive — a malformed response degrades to a single research
 step rather than crashing the graph.
 """
+
 from __future__ import annotations
 
 import json
@@ -16,6 +17,7 @@ from app.agents.state import AgentState, Step
 from app.core import llm
 from app.graph.routing import GRAPH_HINT, is_relational_goal
 from app.memory.manager import MemoryManager, get_memory
+from app.memory.orchestrator import get_orchestrator
 
 WORKER_TYPES = ("research", "coding", "sql", "browser")
 
@@ -51,11 +53,7 @@ def parse_plan(raw: str, goal: str) -> list[Step]:
     if match:
         try:
             data = json.loads(match.group(0))
-            steps = [
-                _coerce_step(i, item)
-                for i, item in enumerate(data)
-                if isinstance(item, dict)
-            ]
+            steps = [_coerce_step(i, item) for i, item in enumerate(data) if isinstance(item, dict)]
             if steps:
                 return steps
         except (json.JSONDecodeError, TypeError):
@@ -90,14 +88,34 @@ async def planner_node(state: AgentState) -> AgentState:
     scratchpad = list(state.get("scratchpad", []))
 
     memory_context = ""
-    memory = get_memory()
-    if memory is not None:
-        hits = await memory.recall(goal)
-        memory_context = MemoryManager.format_recall(hits)
-        if hits:
+    orch = get_orchestrator()
+    if orch is not None:
+        # MemGPT-style controller: budgeted, advisory memory context (config D).
+        from app.core.config import get_settings
+        from app.memory.context import ContextController
+
+        recent = [m.get("content", "") for m in scratchpad][-5:]
+        ctx = ContextController(orch, token_budget=get_settings().memory_context_tokens).build(
+            goal, working_notes=recent
+        )
+        memory_context = ctx["context"]
+        if ctx["count"]:
             scratchpad.append(
-                {"node": "planner", "content": f"recalled {len(hits)} past run(s)"}
+                {
+                    "node": "planner",
+                    "content": f"recalled {ctx['count']} memory item(s) "
+                    f"({ctx['tokens']} tok, {int(ctx['utilization'] * 100)}% budget)",
+                }
             )
+    else:
+        memory = get_memory()  # legacy fallback (preserves existing behavior/tests)
+        if memory is not None:
+            hits = await memory.recall(goal)
+            memory_context = MemoryManager.format_recall(hits)
+            if hits:
+                scratchpad.append(
+                    {"node": "planner", "content": f"recalled {len(hits)} past run(s)"}
+                )
 
     extra_hint = ""
     if is_relational_goal(goal):

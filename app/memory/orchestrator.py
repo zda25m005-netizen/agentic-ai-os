@@ -31,6 +31,21 @@ def _tokens(text: str) -> int:
     return max(1, len(text) // 4)  # ~4 chars/token approximation
 
 
+# Process-wide orchestrator (installed by the app at startup, cleared on shutdown).
+# When None, the agent falls back to the legacy MemoryManager path — preserving all
+# existing behavior and tests, which never install one.
+_default: MemoryOrchestrator | None = None
+
+
+def get_orchestrator() -> MemoryOrchestrator | None:
+    return _default
+
+
+def set_orchestrator(orch: MemoryOrchestrator | None) -> None:
+    global _default
+    _default = orch
+
+
 class MemoryOrchestrator:
     def __init__(self, owner: str = "me", decay_rate: float = 0.05):
         self.owner = owner
@@ -197,6 +212,32 @@ class MemoryOrchestrator:
         r.last_accessed_at = time.time()
         r.status = "reinforced"
         return store.put(r)
+
+    def supersede(self, old_id: str, content: str, **meta) -> MemoryRecord | None:
+        """Explicitly supersede a record by id (used by the lifecycle resolver).
+
+        The old record is retained as history; a new active record links back to it.
+        """
+        old = store.get(old_id, self.owner)
+        if not old:
+            return None
+        old.status = "superseded"
+        old.valid_until = time.time()
+        old.updated_at = time.time()
+        store.put(old)
+        rec = MemoryRecord(
+            memory_type=old.memory_type,
+            content=content,
+            key=old.key,
+            source=meta.get("source", "agent"),
+            confidence=meta.get("confidence", 0.8),
+            importance=meta.get("importance", 1.0),
+            owner=self.owner,
+            supersedes_id=old.id,
+            provenance=meta.get("provenance"),
+            valid_from=time.time(),
+        )
+        return store.put(rec)
 
     # --- introspection -------------------------------------------------------
     def stats(self) -> dict:

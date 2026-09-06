@@ -12,43 +12,45 @@ from app.memory.eval.dataset import SCENARIOS
 from app.memory.orchestrator import MemoryOrchestrator
 
 
-def _run_one(scenario: dict, retrieve_enabled: bool, token_budget: int | None) -> dict:
+def _run_one(scenario: dict, config: str, token_budget: int | None) -> dict:
     owner = f"eval-{uuid.uuid4().hex[:8]}"
     orch = MemoryOrchestrator(owner=owner)
-    for m in scenario.get("seed", []):
-        orch.remember(
-            m["content"],
-            memory_type=m.get("layer", "semantic"),
-            key=m.get("key"),
-            confidence=m.get("confidence", 0.7),
-            tags=m.get("tags", []),
-        )
-    for m in scenario.get("ops", []):
-        orch.remember(
-            m["content"],
-            memory_type=m.get("layer", "semantic"),
-            key=m.get("key"),
-            confidence=m.get("confidence", 0.7),
-        )
-    if retrieve_enabled:
+    writes = scenario.get("seed", []) + scenario.get("ops", [])
+
+    if config == "lifecycle":
+        # config D: ingest raw statements through extract -> retrieve-similar -> resolve
+        from app.memory.lifecycle import extract_candidates, resolve_and_ingest
+
+        for m in writes:
+            resolve_and_ingest(orch, extract_candidates(m["content"], source="eval"))
+    elif config != "no_memory":
+        for m in writes:
+            orch.remember(
+                m["content"],
+                memory_type=m.get("layer", "semantic"),
+                key=m.get("key"),
+                confidence=m.get("confidence", 0.7),
+                tags=m.get("tags", []),
+            )
+
+    if config == "no_memory":
+        texts, tokens = [], 0
+    else:
         recs, tokens = orch.retrieve(scenario["query"], token_budget=token_budget)
         texts = [r.content for r in recs]
-    else:  # no-memory baseline
-        texts, tokens = [], 0
     return metrics.score_scenario(scenario, texts, tokens)
 
 
 def evaluate(config: str = "orchestrator", token_budget: int | None = 400) -> dict:
     """Return machine-readable results for a config.
 
-    config: "no_memory" (baseline) | "orchestrator" (current engine).
+    config: "no_memory" | "orchestrator" | "lifecycle" (Mem0 extract+resolve, config D).
     Uses an isolated temp store so eval never touches production data.
     """
     prev = mem_store.DB_PATH
     mem_store.DB_PATH = Path(tempfile.mkdtemp()) / "eval_mem.db"
     try:
-        retrieve_enabled = config != "no_memory"
-        rows = [_run_one(s, retrieve_enabled, token_budget) for s in SCENARIOS]
+        rows = [_run_one(s, config, token_budget) for s in SCENARIOS]
         return {"config": config, "rows": rows, "aggregate": metrics.aggregate(rows)}
     finally:
         mem_store.DB_PATH = prev

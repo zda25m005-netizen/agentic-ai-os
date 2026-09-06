@@ -53,6 +53,14 @@ async def _lifespan(_app: FastAPI):
     except Exception as exc:  # never block startup on a cold database
         logging.getLogger("agentic").warning("mission table init skipped: %s", exc)
 
+    # Install the canonical memory orchestrator so the live agent uses the Mem0
+    # lifecycle + MemGPT context controller (config D). Cleared on shutdown so
+    # unit tests that drive nodes directly keep the legacy deterministic path.
+    if settings.memory_policy_mode != "off":
+        from app.memory.orchestrator import MemoryOrchestrator, set_orchestrator
+
+        set_orchestrator(MemoryOrchestrator(owner="me"))
+
     stop = asyncio.Event()
     worker_task: asyncio.Task | None = None
     if settings.worker_enabled:
@@ -68,6 +76,9 @@ async def _lifespan(_app: FastAPI):
         yield
     finally:
         stop.set()
+        from app.memory.orchestrator import set_orchestrator
+
+        set_orchestrator(None)  # clear global so tests stay hermetic
         if worker_task is not None:
             worker_task.cancel()
             try:

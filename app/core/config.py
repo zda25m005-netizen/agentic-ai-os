@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     # Memory policy engine: "deterministic" (default, safe fallback) | "llm" | "rl".
     # llm/rl are experimental and gated; deterministic must always work standalone.
     memory_policy_mode: str = Field(default="deterministic")
+    # Token budget for memory injected into the planner context (MemGPT controller).
+    memory_context_tokens: int = Field(default=600)
 
     # Langfuse tracing (optional; export runs when both keys are set)
     langfuse_public_key: str = Field(default="")

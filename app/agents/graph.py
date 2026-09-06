@@ -8,6 +8,7 @@ The Critic's conditional edge is what makes this agentic: after every step
 it decides whether to keep going, redo the step, or finish. The finalizer
 synthesizes the answer and persists the run to long-term memory (if set).
 """
+
 from __future__ import annotations
 
 from langgraph.graph import END, StateGraph
@@ -16,7 +17,9 @@ from app.agents.critic import critic_node
 from app.agents.executor import executor_node, is_done
 from app.agents.planner import planner_node
 from app.agents.state import AgentState, new_state
+from app.core import llm
 from app.memory.manager import get_memory
+from app.memory.orchestrator import get_orchestrator
 from app.obs import metrics
 
 
@@ -37,10 +40,39 @@ async def finalize_node(state: AgentState) -> AgentState:
     scratchpad = list(state.get("scratchpad", []))
     scratchpad.append({"node": "finalize", "content": "synthesized final answer"})
 
-    memory = get_memory()
-    if memory is not None:
-        await memory.remember(state.get("goal", ""), answer)
-        scratchpad.append({"node": "finalize", "content": "saved run to memory"})
+    goal = state.get("goal", "")
+    orch = get_orchestrator()
+    if orch is not None:
+        # Mem0-style lifecycle: log the run episodically, then extract + resolve
+        # durable candidate memories from goal + answer (config D).
+        from app.core.config import get_settings
+        from app.memory.lifecycle import (
+            extract_candidates,
+            extract_candidates_llm,
+            resolve_and_ingest,
+        )
+
+        orch.remember(
+            f"Goal: {goal} -> {answer}",
+            memory_type="episodic",
+            source="agent",
+            confidence=0.6,
+            mission_id=state.get("mission_id"),
+        )
+        text = f"{goal}\n{answer}"
+        if get_settings().memory_policy_mode == "llm" and llm.is_configured():
+            candidates = await extract_candidates_llm(text, llm.chat, source="agent")
+        else:
+            candidates = extract_candidates(text, source="agent")
+        result = resolve_and_ingest(orch, candidates, mission_id=state.get("mission_id"))
+        ops = result["ops"]
+        summary = f"memory lifecycle: {ops['ADD']} add, {ops['UPDATE']} update, {ops['NOOP']} noop"
+        scratchpad.append({"node": "finalize", "content": summary})
+    else:
+        memory = get_memory()  # legacy fallback (preserves existing behavior/tests)
+        if memory is not None:
+            await memory.remember(goal, answer)
+            scratchpad.append({"node": "finalize", "content": "saved run to memory"})
 
     return {"answer": answer, "scratchpad": scratchpad}
 
@@ -73,6 +105,4 @@ def build_graph():
 async def run_agent(goal: str, recursion_limit: int = 50) -> AgentState:
     """Run the full agent graph on a goal and return the final state."""
     graph = build_graph()
-    return await graph.ainvoke(
-        new_state(goal), config={"recursion_limit": recursion_limit}
-    )
+    return await graph.ainvoke(new_state(goal), config={"recursion_limit": recursion_limit})
