@@ -1,0 +1,59 @@
+/* SOP Builder — scoped under `.sop`, reuses :root --h* tokens. */
+.sop { min-height: 100vh; background: var(--hbg); color: var(--htext);
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 13px; }
+.sop svg { display: block; }
+.sop .sec-h { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--hmeta); margin: 18px 0 8px; }
+.sop .btn { height: 30px; padding: 0 11px; border-radius: 8px; font-size: 12px; font-weight: 500; cursor: pointer; font-family: inherit; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--hborder-strong); white-space: nowrap; }
+.sop .btn.primary { background: rgba(255,255,255,0.1); color: var(--htext); }
+.sop .btn.primary:hover { background: rgba(255,255,255,0.15); }
+.sop .btn.ghost { background: rgba(255,255,255,0.035); border-color: var(--hborder); color: var(--htext2); }
+.sop .btn.ghost:hover { background: rgba(255,255,255,0.07); color: var(--htext); }
+.sop .btn:disabled { opacity: .5; cursor: default; }
+.sop .btn svg { width: 13px; height: 13px; }
+
+.sop-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 24px; border-bottom: 1px solid var(--hborder); flex-wrap: wrap; }
+.sop-top-l, .sop-top-r { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sop-title { background: none; border: none; outline: none; color: var(--htext); font-size: 17px; font-weight: 600; font-family: inherit; min-width: 140px; }
+.sop-sel { height: 30px; background: var(--hcard); border: 1px solid var(--hborder); border-radius: 8px; color: var(--htext); font-size: 12px; font-family: inherit; padding: 0 8px; cursor: pointer; max-width: 200px; }
+.sop-saved { font-size: 11.5px; color: var(--hmuted); }
+.sop-err { margin: 10px 24px; padding: 8px 12px; background: rgba(240,120,100,0.08); border: 1px solid rgba(240,120,100,0.3); border-radius: 8px; font-size: 12.5px; color: #F0A98C; display: flex; justify-content: space-between; }
+.sop-err button { background: none; border: none; color: inherit; cursor: pointer; font-size: 15px; }
+
+.sop-grid { display: grid; grid-template-columns: 280px 1fr 300px; gap: 0; min-height: calc(100vh - 60px); }
+.sop-pane { padding: 18px 20px; border-right: 1px solid var(--hborder); overflow-y: auto; }
+.sop-pane:last-child { border-right: none; border-left: 1px solid var(--hborder); }
+.sop-fld { margin-bottom: 10px; }
+.sop-fl { display: block; font-size: 11px; color: var(--hmuted); margin-bottom: 4px; }
+.sop-in, .sop-mini { width: 100%; background: var(--hcard); border: 1px solid var(--hborder); border-radius: 8px; color: var(--htext); font-size: 12.5px; font-family: inherit; padding: 7px 10px; outline: none; }
+.sop-mini { min-height: 56px; resize: vertical; }
+.sop-in:focus, .sop-mini:focus { border-color: var(--hborder-strong); }
+.sop-link { display: inline-block; margin-top: 8px; font-size: 12px; color: var(--hblue); text-decoration: none; }
+.sop-note { font-size: 11px; color: var(--hmuted); line-height: 1.5; margin-top: 10px; }
+
+.sop-editor { display: flex; flex-direction: column; padding: 16px 22px; min-width: 0; }
+.sop-toolbar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+.sop-tb-div { width: 1px; height: 20px; background: var(--hborder); margin: 0 2px; }
+.sop-busy { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--htext2); margin-bottom: 8px; }
+.sop-busy .spin, .ver .spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.15); border-top-color: var(--hblue); animation: sopspin .7s linear infinite; }
+@keyframes sopspin { to { transform: rotate(360deg); } }
+.sop-doc { flex: 1; min-height: 420px; background: var(--hcard); border: 1px solid var(--hborder); border-radius: 12px; color: var(--htext); font-size: 14px; line-height: 1.7; font-family: Georgia, "Times New Roman", serif; padding: 22px 26px; outline: none; resize: none; }
+.sop-doc:focus { border-color: var(--hborder-strong); }
+.sop-count { font-size: 11.5px; color: var(--hmuted); margin-top: 8px; font-variant-numeric: tabular-nums; }
+.sop-count .over { color: #E0B457; }
+
+.sop-tabs { display: inline-flex; background: var(--hcard); border: 1px solid var(--hborder); border-radius: 9px; padding: 3px; margin-bottom: 14px; }
+.sop-tabs button { font-size: 12px; color: var(--htext2); background: none; border: none; border-radius: 6px; padding: 6px 11px; cursor: pointer; font-family: inherit; }
+.sop-tabs button.on { background: rgba(255,255,255,0.08); color: var(--htext); }
+.qrow { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--htext2); padding: 5px 0; }
+.qrow b { color: var(--htext); }
+.sop .chk { display: flex; gap: 9px; align-items: flex-start; padding: 4px 0; }
+.sop .chk-m { width: 15px; font-size: 13px; flex-shrink: 0; }
+.sop .chk-m.ok { color: #7DE0A8; } .sop .chk-m.no { color: #F0A98C; } .sop .chk-m.unclear { color: #E0B457; } .sop .chk-m.na { color: var(--hmuted); }
+.sop .chk-body { font-size: 12.5px; color: var(--htext); }
+.sop .chk-exp { font-size: 11px; color: var(--hmuted); margin-top: 2px; }
+.sop-flags { display: flex; gap: 6px; flex-wrap: wrap; }
+.flag { font-size: 11px; color: #E0B457; border: 1px solid rgba(224,180,87,0.3); border-radius: 6px; padding: 2px 7px; }
+.sop-rep { font-size: 11.5px; color: var(--hmuted); padding: 3px 0; }
+.ver { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--hdivider); font-size: 12.5px; }
+
+@media (max-width: 1000px) { .sop-grid { grid-template-columns: 1fr; } .sop-pane { border-right: none; border-bottom: 1px solid var(--hborder); } .sop-pane:last-child { border-left: none; } }

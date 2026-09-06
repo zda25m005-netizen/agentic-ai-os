@@ -60,6 +60,11 @@ select = ["E", "F", "I", "UP", "B"]
 "app/exec/latex/render.py" = ["E501"]
 # Curated data file: long official URLs and program descriptions are not wrappable.
 "app/scholarships/catalog.py" = ["E501"]
+"app/phd/catalog.py" = ["E501"]
+# Long SQL statements and LLM prompt strings are clearer unwrapped.
+"app/phd/store.py" = ["E501"]
+"app/sop/store.py" = ["E501"]
+"app/sop/generate.py" = ["E501"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
