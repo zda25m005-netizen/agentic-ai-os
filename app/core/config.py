@@ -53,6 +53,13 @@ class Settings(BaseSettings):
     # policy. Used only when memory_policy_mode == "rl"; falls back to deterministic when
     # the file is missing or unreadable, so the default path is always safe.
     memory_policy_weights: str = Field(default="memory_policy.json")
+    # RL policy backend (config F vs G): "linear" (numpy, config F) or "llm" (open-weight
+    # LLM + optional LoRA/QLoRA adapter, config G). Only consulted when policy_mode == "rl";
+    # the LLM backend lazily loads torch/transformers and falls back to the heuristic/linear
+    # policy when they are absent, so the default runtime never requires the ML stack.
+    memory_policy_backend: str = Field(default="linear")
+    memory_llm_model: str = Field(default="Qwen/Qwen2.5-0.5B-Instruct")
+    memory_lora_adapter: str = Field(default="")
 
     # Langfuse tracing (optional; export runs when both keys are set)
     langfuse_public_key: str = Field(default="")

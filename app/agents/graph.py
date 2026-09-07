@@ -70,7 +70,11 @@ async def finalize_node(state: AgentState) -> AgentState:
         from app.memory.policy import get_policy
 
         policy = get_policy(
-            settings.memory_policy_mode, weights_path=settings.memory_policy_weights
+            settings.memory_policy_mode,
+            weights_path=settings.memory_policy_weights,
+            backend=settings.memory_policy_backend,
+            llm_model=settings.memory_llm_model,
+            lora_adapter=settings.memory_lora_adapter,
         )
         result = resolve_and_ingest(
             orch, candidates, mission_id=state.get("mission_id"), policy=policy

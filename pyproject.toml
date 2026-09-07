@@ -46,6 +46,7 @@ finetune = [
     "trl>=0.9",
     "datasets>=2.20",
     "accelerate>=0.33",
+    "bitsandbytes>=0.43",  # QLoRA 4-bit base weights (config G)
 ]
 
 [tool.ruff]

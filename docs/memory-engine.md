@@ -22,6 +22,10 @@ No paper benchmarks are reproduced or claimed.
 | Graph memory (owner-scoped entity/relationship, reuse `app/graph` Neo4j client) | **Implemented** (config E) |
 | Pluggable resolver policy (deterministic default; learned policy behind one interface) | **Implemented** (config F) |
 | RL memory policy: GRPO trainer + decision env + weights, wired into the resolver | **Implemented / Experimental** (config F) |
+| Six-action trajectory memory control (STORE/RETRIEVE/UPDATE/SUMMARIZE/DISCARD/NOOP) | **Implemented** (config G) |
+| Open-weight LLM memory policy (+ optional LoRA/QLoRA adapter), heuristic fallback | **Implemented** (config G) |
+| GRPO training of the LLM policy on agent trajectories (LoRA/QLoRA, lazy `finetune` extra) | **Implemented / Experimental** (config G) |
+| Honest separated metrics (policy-action / retrieval / temporal / task / tokens / latency) | **Implemented** (config G) |
 
 ## Architecture (implemented core)
 
@@ -108,12 +112,91 @@ hand-written rules or a learned policy:
   learned policy makes the decision; otherwise it falls back to deterministic — so the safe
   path is always the default.
 
-On the local fixtures the GRPO policy converges (mean greedy reward ≈ 0.18 → 0.95, ~97%
-action accuracy) and, run through the eval harness (`evaluate("rl_policy")`), recovers
+On the local fixtures the GRPO policy converges (mean greedy reward ≈ 0.18 → 0.95, and
+**policy action accuracy** ≈ 0.97 — i.e. it picks the correct ADD/UPDATE/NOOP op ~97% of
+the time, which is *not* the same thing as retrieval accuracy or task success; see the
+metrics section). Run through the eval harness (`evaluate("rl_policy")`) it recovers
 config-D quality (precision 0.875, recall 1.0, zero stale leaks) — it learned the resolve
 decision from reward alone. This is honest, small-scale plumbing: a linear policy over a
 3-action decision on hand-written fixtures, **not** a reproduction of GRPO on an LLM or any
 published benchmark.
+
+## LLM memory policy over agent trajectories (config G, experimental)
+
+Config F's learned policy is a toy: a linear model over a 3-action decision. Config G is the
+real research layer — a small **open-weight LLM** (default `Qwen/Qwen2.5-0.5B-Instruct`),
+optionally fine-tuned with a **LoRA/QLoRA** adapter, that manages memory over a richer
+six-action space, trained by GRPO on actual agent trajectories.
+
+```
+                    Agent trajectory
+                           ↓
+                  Memory Environment            app/memory/trajectory/env.py
+                           ↓
+                 ┌─────────┴─────────┐
+                 ↓                   ↓
+             Observation          Memory state
+                 ↓                   ↓
+                 └─────────┬─────────┘
+                           ↓
+                    LLM Memory Policy           app/memory/llm_policy.py
+                           ↓
+             STORE / RETRIEVE / UPDATE
+             SUMMARIZE / DISCARD / NOOP         app/memory/trajectory/actions.py
+                           ↓
+                       Reward                   app/memory/trajectory/env.py::step_reward
+                           ↓
+                         GRPO                   app/memory/rl/llm_grpo.py
+                           ↓
+                    LoRA / QLoRA                peft adapter (finetune extra)
+                           ↓
+                 Trained Memory Policy
+```
+
+- **Six-action space** (`app/memory/trajectory/actions.py`): STORE, RETRIEVE, UPDATE,
+  SUMMARIZE, DISCARD, NOOP. `op_to_resolver_action` projects it onto the resolver's
+  ADD/UPDATE/NOOP so the *same* policy object can also drive the existing Mem0 lifecycle.
+- **Environment + trajectories** (`trajectory/env.py`, `trajectory/dataset.py`): labelled
+  agent-trajectory decision steps with rewards shaped from real failure modes — information
+  loss, stale leak, and missed retrieval penalised hardest; pollution and token bloat less so.
+- **Policy** (`llm_policy.py`): `LLMMemoryPolicy` builds a prompt from the observation +
+  memory state, generates, and parses one op. `transformers`/`peft`/`torch` are imported
+  **lazily**; when they're absent (the default runtime and CI) it falls back to a
+  dependency-free `HeuristicPolicy` — a strong six-action baseline (~0.98 action accuracy on
+  the fixtures) that is also the resolver fallback.
+- **GRPO + LoRA/QLoRA training** (`rl/llm_grpo.py`): group-relative advantage on the action
+  token log-probs, updating only the LoRA adapter (or a 4-bit QLoRA base). The heavy stack is
+  lazy; calling `train()` without it raises a clear "install `.[finetune]`" error rather than
+  breaking imports. The advantage math (`group_advantages`) is pure-numpy and unit-tested.
+- **Disabled by default.** Activated only by `MEMORY_POLICY_MODE=rl` + `MEMORY_POLICY_BACKEND=llm`;
+  otherwise the deterministic policy runs and nothing loads torch.
+
+### Metrics — kept honest and separate
+
+A single "accuracy" number would be misleading, so `app/memory/metrics_suite.py` computes and
+reports these as **distinct, independently-named** quantities (never collapse them):
+
+| Metric | What it measures |
+|---|---|
+| `policy_action_accuracy` | did the policy pick the right OP (STORE/UPDATE/…)? |
+| `memory_retrieval_accuracy` | precision / recall / F1 of what it pulled back |
+| `temporal_update_accuracy` | on corrections, did the new value win and the stale one go? |
+| `task_success` | did the downstream task actually get answered? |
+| `token_efficiency` | context tokens the memory cost vs. a no-compression baseline |
+| `latency` | wall-clock cost (mean / p50 / p95) of the memory decisions |
+
+The "~97% action accuracy" figure for config F/G is **policy action accuracy on the local
+decision env** — a specific, narrow claim. It is *not* retrieval accuracy, temporal-update
+accuracy, or task success, and the code/docs never label it "memory accuracy".
+
+To train the real adapter on a GPU/CPU box:
+
+```
+pip install -e ".[finetune]"
+python -c "from app.memory.rl.llm_grpo import LLMGRPOTrainer; \
+           print(LLMGRPOTrainer(quantized=True).train(epochs=1, out_dir='mem_lora'))"
+# then run it: MEMORY_POLICY_MODE=rl MEMORY_POLICY_BACKEND=llm MEMORY_LORA_ADAPTER=mem_lora
+```
 
 ## Guarantees (encoded + tested)
 
@@ -135,6 +218,11 @@ published benchmark.
   graph memory (config E) ingests + recalls owner-scoped triples; otherwise it is a no-op.
 - `MEMORY_POLICY_WEIGHTS` — path to the trained RL policy weights (config F, default
   `memory_policy.json`). Used only when `MEMORY_POLICY_MODE=rl`; missing/invalid → deterministic.
+- `MEMORY_POLICY_BACKEND` — `linear` (config F, numpy) | `llm` (config G, open-weight LLM +
+  optional LoRA/QLoRA). Consulted only when `MEMORY_POLICY_MODE=rl`; the `llm` backend loads
+  torch/transformers lazily and falls back to the heuristic when they are absent.
+- `MEMORY_LLM_MODEL` / `MEMORY_LORA_ADAPTER` — base model id and optional adapter dir for the
+  config-G LLM policy.
 - Neo4j (`NEO4J_*`) and Qdrant (`QDRANT_URL`) remain optional; graph memory reuses the existing Neo4j client.
 
 ## Evaluation
@@ -157,8 +245,11 @@ fixtures, **not** the published LongMemEval benchmark — no paper numbers are c
 - `app/memory/records.py`, `app/memory/store.py`, `app/memory/orchestrator.py`
 - `app/memory/lifecycle.py` (Mem0), `app/memory/context.py` (MemGPT),
   `app/memory/graph_memory.py` (graph memory), `app/memory/policy.py` (pluggable resolver
-  policy), `app/memory/rl/{env,grpo,train}.py` (GRPO training) — wired into
+  policy), `app/memory/rl/{env,grpo,train}.py` (config-F GRPO training) — wired into
   `app/agents/planner.py` and `app/agents/graph.py`
+- `app/memory/trajectory/{actions,env,dataset,prompt}.py` (config-G six-action trajectory
+  layer), `app/memory/llm_policy.py` (LLM policy + heuristic fallback),
+  `app/memory/rl/llm_grpo.py` (GRPO + LoRA/QLoRA), `app/memory/metrics_suite.py` (honest metrics)
 - `app/api/memory.py` (router incl. `/memory/graph`), registered in `app/api/main.py`
   (orchestrator installed in lifespan)
 - `app/memory/eval/{dataset,metrics,harness,ablation}.py`
@@ -166,4 +257,5 @@ fixtures, **not** the published LongMemEval benchmark — no paper numbers are c
 - `tests/test_memory_orchestrator.py`, `tests/test_memory_eval.py`,
   `tests/test_memory_lifecycle.py`, `tests/test_memory_context.py`,
   `tests/test_memory_agent_wiring.py`, `tests/test_graph_memory.py`,
-  `tests/test_memory_policy.py`, `tests/test_memory_rl.py`
+  `tests/test_memory_policy.py`, `tests/test_memory_rl.py`,
+  `tests/test_trajectory_memory.py`, `tests/test_llm_policy.py`, `tests/test_metrics_suite.py`

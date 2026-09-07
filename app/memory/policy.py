@@ -133,14 +133,37 @@ class LinearPolicy(MemoryPolicy):
 
 
 def get_policy(
-    mode: str = "deterministic", *, weights_path: str | Path | None = None
+    mode: str = "deterministic",
+    *,
+    weights_path: str | Path | None = None,
+    backend: str = "linear",
+    llm_model: str | None = None,
+    lora_adapter: str | None = None,
 ) -> MemoryPolicy:
-    """Pick a policy from the mode string, always degrading safely to deterministic.
+    """Pick a resolver policy from the mode + backend, always degrading safely.
 
-    - ``"rl"`` → load LinearPolicy from ``weights_path`` if present & valid, else deterministic.
-    - anything else (``"deterministic"``, ``"llm"``, unknown) → DeterministicPolicy.
+    - ``mode != "rl"`` (default) → DeterministicPolicy (the safe rule set).
+    - ``mode == "rl"`` and ``backend == "llm"`` (config G) → an LLM memory policy, which
+      itself falls back to a heuristic when torch/transformers are unavailable.
+    - ``mode == "rl"`` and ``backend == "linear"`` (config F) → LinearPolicy from
+      ``weights_path`` if present & valid, else deterministic.
+
+    The imports for the LLM backend are done lazily here so importing this module never
+    pulls in the ML stack (and avoids an import cycle with the trajectory layer).
     """
-    if mode == "rl" and weights_path and Path(weights_path).exists():
+    if mode != "rl":
+        return DeterministicPolicy()
+    if backend == "llm":
+        try:
+            from app.memory.llm_policy import LLMMemoryPolicy
+
+            return LLMMemoryPolicy(
+                llm_model or "Qwen/Qwen2.5-0.5B-Instruct",
+                adapter_path=(lora_adapter or None),
+            )
+        except Exception:
+            return DeterministicPolicy()
+    if weights_path and Path(weights_path).exists():
         try:
             return LinearPolicy.load(weights_path)
         except Exception:
