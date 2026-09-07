@@ -107,6 +107,26 @@ async def planner_node(state: AgentState) -> AgentState:
                     f"({ctx['tokens']} tok, {int(ctx['utilization'] * 100)}% budget)",
                 }
             )
+
+        # Config E: append related triples from the owner-scoped graph memory as an
+        # extra advisory block. No-op unless MEMORY_GRAPH_ENABLED and Neo4j answers.
+        if get_settings().memory_graph_enabled:
+            from app.memory.graph_memory import GraphMemory
+
+            gm = GraphMemory(owner=orch.owner)
+            related = await gm.related(goal)
+            if related["context"]:
+                memory_context = (
+                    f"{memory_context}\n\n{related['context']}"
+                    if memory_context
+                    else related["context"]
+                )
+                scratchpad.append(
+                    {
+                        "node": "planner",
+                        "content": f"recalled {len(related['triples'])} graph relation(s)",
+                    }
+                )
     else:
         memory = get_memory()  # legacy fallback (preserves existing behavior/tests)
         if memory is not None:

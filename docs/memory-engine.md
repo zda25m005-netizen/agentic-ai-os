@@ -19,7 +19,7 @@ No paper benchmarks are reproduced or claimed.
 | Mem0-style lifecycle (extract candidates → retrieve-similar → resolve) wired into `finalize_node` | **Implemented** (config D) |
 | MemGPT-style context controller (budget/prioritize/evict) wired into `planner_node` | **Implemented** (config D) |
 | Optional LLM candidate extraction (`MEMORY_POLICY_MODE=llm`, deterministic fallback) | **Implemented** |
-| Graph memory (entity/relationship, reuse `app/graph` Neo4j client) | **Planned** (config E) |
+| Graph memory (owner-scoped entity/relationship, reuse `app/graph` Neo4j client) | **Implemented** (config E) |
 | LLM / RL (GRPO) memory policy + training + RL env | **Planned / Experimental** (config F) |
 
 ## Architecture (implemented core)
@@ -64,6 +64,26 @@ flowchart LR
   existing test), both nodes fall back to the legacy `MemoryManager` path — so all prior
   behavior and tests are preserved.
 
+## Graph memory (config E)
+
+An optional entity/relationship layer (`app/memory/graph_memory.py`, Mem0g-style) that
+reuses the existing `app/graph` stack — the same LLM extraction (`extract_graph`) and the
+same Neo4j client (`run_query` / `verify_connectivity`). Durable facts are projected into
+an **owner-scoped** namespace (`:MemEntity` / `:MEM_RELATION`, distinct from the document
+RAG graph's `:Entity` / `:RELATION`), and recall traverses only the current owner's subgraph.
+
+- **`finalize_node`** — after the Mem0 lifecycle, also calls `GraphMemory.ingest_text(...)`
+  to MERGE the run's entities/relations (idempotent, owner-scoped).
+- **`planner_node`** — calls `GraphMemory.related(goal)` and appends the returned triples as
+  a second, clearly-labelled *advisory* block alongside the MemGPT context.
+- **Optional + graceful.** Gated by `MEMORY_GRAPH_ENABLED` (default **off**) and only active
+  when a live Neo4j answers `verify_connectivity`. Otherwise every call is a safe no-op —
+  ingest returns zeros, recall returns empty — so the agent, the `/memory/graph` endpoint,
+  and the whole test suite run unchanged without a graph database. Unit-tested end-to-end
+  with a fake driver (`tests/test_graph_memory.py`); no live Neo4j required in CI.
+- **Owner isolation.** Every MATCH/MERGE filters on `$owner`; one owner's graph is never
+  traversed for another (tested).
+
 ## Guarantees (encoded + tested)
 
 - **Current request is authoritative.** `build_context` returns memory clearly labelled
@@ -80,16 +100,19 @@ flowchart LR
 
 - `MEMORY_BACKEND` — `sqlite` (default) | `postgres` (existing episodic backend).
 - `MEMORY_POLICY_MODE` — `deterministic` (default, always works) | `llm` | `rl` (experimental, gated).
-- Neo4j (`NEO4J_*`) and Qdrant (`QDRANT_URL`) remain optional; graph memory is planned and will reuse the existing optional Neo4j client.
+- `MEMORY_GRAPH_ENABLED` — `false` (default) | `true`. When true and a live Neo4j answers,
+  graph memory (config E) ingests + recalls owner-scoped triples; otherwise it is a no-op.
+- Neo4j (`NEO4J_*`) and Qdrant (`QDRANT_URL`) remain optional; graph memory reuses the existing Neo4j client.
 
 ## Evaluation
 
 `python -c "from app.memory.eval.ablation import run; import json; print(json.dumps(run(), default=str, indent=2))"`
 
 Runs the local fixtures for **A (no memory)**, **C (orchestrator)**, and **D (orchestrator +
-Mem0 lifecycle + MemGPT context controller)**. B requires a live Qdrant and is skipped offline;
-E/F are unbuilt and report **no** numbers. Metrics: precision, recall, stale-leak,
-irrelevant-leak, retrieved tokens.
+Mem0 lifecycle + MemGPT context controller)**. B requires a live Qdrant and E requires a live
+Neo4j, so both are skipped offline (E's module + wiring exist and are unit-tested with a fake
+driver); F is unbuilt. No numbers are reported for configs that were not actually run. Metrics:
+precision, recall, stale-leak, irrelevant-leak, retrieved tokens.
 
 On the local fixtures, config D improves precision over C (0.708 → 0.875) and reduces
 irrelevant-leak (3 → 1) at recall 1.0 with zero stale leaks. These are small hand-written
@@ -98,11 +121,13 @@ fixtures, **not** the published LongMemEval benchmark — no paper numbers are c
 ## Files
 
 - `app/memory/records.py`, `app/memory/store.py`, `app/memory/orchestrator.py`
-- `app/memory/lifecycle.py` (Mem0), `app/memory/context.py` (MemGPT) — wired into
-  `app/agents/planner.py` and `app/agents/graph.py`
-- `app/api/memory.py` (router), registered in `app/api/main.py` (orchestrator installed in lifespan)
+- `app/memory/lifecycle.py` (Mem0), `app/memory/context.py` (MemGPT),
+  `app/memory/graph_memory.py` (graph memory) — wired into `app/agents/planner.py`
+  and `app/agents/graph.py`
+- `app/api/memory.py` (router incl. `/memory/graph`), registered in `app/api/main.py`
+  (orchestrator installed in lifespan)
 - `app/memory/eval/{dataset,metrics,harness,ablation}.py`
 - `frontend/app/lib/memoryApi.ts` (now calls `/memory`)
 - `tests/test_memory_orchestrator.py`, `tests/test_memory_eval.py`,
   `tests/test_memory_lifecycle.py`, `tests/test_memory_context.py`,
-  `tests/test_memory_agent_wiring.py`
+  `tests/test_memory_agent_wiring.py`, `tests/test_graph_memory.py`

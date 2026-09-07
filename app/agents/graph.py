@@ -68,6 +68,23 @@ async def finalize_node(state: AgentState) -> AgentState:
         ops = result["ops"]
         summary = f"memory lifecycle: {ops['ADD']} add, {ops['UPDATE']} update, {ops['NOOP']} noop"
         scratchpad.append({"node": "finalize", "content": summary})
+
+        # Config E: also project the durable facts into the owner-scoped graph memory.
+        # No-op unless MEMORY_GRAPH_ENABLED and a live Neo4j answers — the agent path
+        # is otherwise unchanged, so tests without a graph DB are unaffected.
+        if get_settings().memory_graph_enabled:
+            from app.memory.graph_memory import GraphMemory
+
+            gm = GraphMemory(owner=orch.owner)
+            g = await gm.ingest_text(text, chat_fn=llm.chat if llm.is_configured() else None)
+            if g["ops"]:
+                scratchpad.append(
+                    {
+                        "node": "finalize",
+                        "content": f"graph memory: {g['entities']} entities, "
+                        f"{g['relations']} relations",
+                    }
+                )
     else:
         memory = get_memory()  # legacy fallback (preserves existing behavior/tests)
         if memory is not None:

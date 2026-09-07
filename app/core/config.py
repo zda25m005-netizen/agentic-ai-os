@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     memory_policy_mode: str = Field(default="deterministic")
     # Token budget for memory injected into the planner context (MemGPT controller).
     memory_context_tokens: int = Field(default=600)
+    # Graph memory (Mem0g-style, config E): project durable facts into an owner-scoped
+    # Neo4j subgraph and recall related triples. Optional; only active when a live Neo4j
+    # answers verify_connectivity, otherwise every graph-memory call is a safe no-op.
+    memory_graph_enabled: bool = Field(default=False)
 
     # Langfuse tracing (optional; export runs when both keys are set)
     langfuse_public_key: str = Field(default="")

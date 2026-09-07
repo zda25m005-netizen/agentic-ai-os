@@ -76,3 +76,52 @@ async def test_no_orchestrator_uses_legacy_path(tmp_path):
     # legacy path: no orchestrator, no memory manager set -> no recall note, plan still built
     assert len(update["plan"]) == 1
     assert not any("advisory" in m["content"].lower() for m in update["scratchpad"])
+
+
+async def test_graph_memory_off_by_default(tmp_path, monkeypatch):
+    """With MEMORY_GRAPH_ENABLED off (default), finalize never touches graph memory."""
+    _install(tmp_path)
+    calls = {"n": 0}
+
+    class Boom:
+        def __init__(self, *a, **k):
+            calls["n"] += 1
+
+    monkeypatch.setattr("app.memory.graph_memory.GraphMemory", Boom, raising=True)
+    try:
+        state = new_state("goal")
+        state["results"] = ["The user prefers Germany."]
+        await finalize_node(state)
+    finally:
+        set_orchestrator(None)
+    assert calls["n"] == 0  # graph memory not constructed when the flag is off
+
+
+async def test_graph_memory_ingested_when_enabled(tmp_path, monkeypatch):
+    """With the flag on, finalize projects durable facts into graph memory."""
+    from app.core.config import get_settings
+
+    _install(tmp_path)
+    settings = get_settings()
+    monkeypatch.setattr(settings, "memory_graph_enabled", True, raising=False)
+
+    seen = {}
+
+    class FakeGM:
+        def __init__(self, owner="me"):
+            seen["owner"] = owner
+
+        async def ingest_text(self, text, chat_fn=None):
+            seen["text"] = text
+            return {"entities": 2, "relations": 1, "ops": 3}
+
+    monkeypatch.setattr("app.memory.graph_memory.GraphMemory", FakeGM, raising=True)
+    try:
+        state = new_state("goal")
+        state["results"] = ["The user prefers Germany."]
+        update = await finalize_node(state)
+    finally:
+        set_orchestrator(None)
+
+    assert seen.get("owner") == "me" and "Germany" in seen.get("text", "")
+    assert any("graph memory" in m["content"] for m in update["scratchpad"])

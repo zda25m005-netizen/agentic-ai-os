@@ -5,7 +5,8 @@ declared PLANNED so results are never fabricated for unbuilt components.
     B  existing (episodic+Qdrant)    — requires a live Qdrant/embeddings (skipped offline)
     C  orchestrator                  — canonical engine, this milestone (implemented)
     D  C + Mem0 lifecycle extraction — implemented (extract -> retrieve-similar -> resolve)
-    E  D + graph memory              — PLANNED
+    E  D + graph memory              — implemented (module + wiring); requires a live Neo4j
+                                       to execute end-to-end, so not scored offline
     F  E + RL memory policy          — PLANNED
 """
 
@@ -18,7 +19,7 @@ STATUS = {
     "B_existing_qdrant": "requires_qdrant",
     "C_orchestrator": "implemented",
     "D_lifecycle": "implemented",
-    "E_graph": "planned",
+    "E_graph": "requires_neo4j",
     "F_rl_policy": "planned",
 }
 
@@ -32,6 +33,7 @@ def run() -> dict:
     return {
         "status": STATUS,
         "results": results,
-        "note": "B/E/F are not executed here; B needs a live Qdrant, E/F are unbuilt. "
-        "No numbers are reported for configs that were not actually run.",
+        "note": "B/E/F are not executed here; B needs a live Qdrant, E needs a live Neo4j "
+        "(the module + agent wiring exist and are unit-tested with a fake driver), F is "
+        "unbuilt. No numbers are reported for configs that were not actually run.",
     }

@@ -122,6 +122,31 @@ def stats() -> dict:
     return _orch().stats()
 
 
+@router.get("/graph")
+async def graph_related(query: str, hops: int = 2) -> dict:
+    """Related facts for `query` from the owner-scoped graph memory (config E).
+
+    Returns ``{enabled, available, triples, text}``. When graph memory is disabled
+    or Neo4j is unreachable, ``available`` is false and ``triples`` is empty — the
+    endpoint never errors on a missing graph DB.
+    """
+    from app.core.config import get_settings
+    from app.memory.graph_memory import GraphMemory
+
+    if not get_settings().memory_graph_enabled:
+        return {"enabled": False, "available": False, "triples": [], "text": ""}
+    gm = GraphMemory(owner=_OWNER)
+    if not gm.available():
+        return {"enabled": True, "available": False, "triples": [], "text": ""}
+    res = await gm.related(query, hops=hops)
+    return {
+        "enabled": True,
+        "available": True,
+        "triples": [{"subject": s, "predicate": p, "object": o} for s, p, o in res["triples"]],
+        "text": res["text"],
+    }
+
+
 @router.put("/{mem_id}")
 def update_memory(mem_id: str, req: UpdateReq) -> dict:
     r = _orch().update(
