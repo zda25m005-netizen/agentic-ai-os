@@ -59,12 +59,22 @@ async def finalize_node(state: AgentState) -> AgentState:
             confidence=0.6,
             mission_id=state.get("mission_id"),
         )
+        settings = get_settings()
         text = f"{goal}\n{answer}"
-        if get_settings().memory_policy_mode == "llm" and llm.is_configured():
+        if settings.memory_policy_mode == "llm" and llm.is_configured():
             candidates = await extract_candidates_llm(text, llm.chat, source="agent")
         else:
             candidates = extract_candidates(text, source="agent")
-        result = resolve_and_ingest(orch, candidates, mission_id=state.get("mission_id"))
+        # Config F: use the learned RL policy for the resolve decision when enabled;
+        # get_policy degrades to the deterministic policy if weights are missing.
+        from app.memory.policy import get_policy
+
+        policy = get_policy(
+            settings.memory_policy_mode, weights_path=settings.memory_policy_weights
+        )
+        result = resolve_and_ingest(
+            orch, candidates, mission_id=state.get("mission_id"), policy=policy
+        )
         ops = result["ops"]
         summary = f"memory lifecycle: {ops['ADD']} add, {ops['UPDATE']} update, {ops['NOOP']} noop"
         scratchpad.append({"node": "finalize", "content": summary})

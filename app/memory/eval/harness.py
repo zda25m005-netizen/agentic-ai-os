@@ -17,12 +17,22 @@ def _run_one(scenario: dict, config: str, token_budget: int | None) -> dict:
     orch = MemoryOrchestrator(owner=owner)
     writes = scenario.get("seed", []) + scenario.get("ops", [])
 
-    if config == "lifecycle":
-        # config D: ingest raw statements through extract -> retrieve-similar -> resolve
+    if config in ("lifecycle", "rl_policy"):
+        # config D: ingest raw statements through extract -> retrieve-similar -> resolve.
+        # config F (rl_policy): same pipeline, but the resolve decision is made by a
+        # GRPO-trained LinearPolicy instead of the deterministic thresholds.
         from app.memory.lifecycle import extract_candidates, resolve_and_ingest
 
+        policy = None
+        if config == "rl_policy":
+            from app.memory.rl.env import MemoryDecisionEnv
+            from app.memory.rl.grpo import GRPOTrainer
+
+            trainer = GRPOTrainer(group_size=8, lr=0.3, seed=0)
+            trainer.train(MemoryDecisionEnv(n=400, seed=0), epochs=40)
+            policy = trainer.policy()
         for m in writes:
-            resolve_and_ingest(orch, extract_candidates(m["content"], source="eval"))
+            resolve_and_ingest(orch, extract_candidates(m["content"], source="eval"), policy=policy)
     elif config != "no_memory":
         for m in writes:
             orch.remember(
@@ -44,7 +54,8 @@ def _run_one(scenario: dict, config: str, token_budget: int | None) -> dict:
 def evaluate(config: str = "orchestrator", token_budget: int | None = 400) -> dict:
     """Return machine-readable results for a config.
 
-    config: "no_memory" | "orchestrator" | "lifecycle" (Mem0 extract+resolve, config D).
+    config: "no_memory" | "orchestrator" | "lifecycle" (Mem0 extract+resolve, config D)
+    | "rl_policy" (config F: lifecycle with the GRPO-trained resolver policy).
     Uses an isolated temp store so eval never touches production data.
     """
     prev = mem_store.DB_PATH

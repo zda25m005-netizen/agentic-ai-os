@@ -7,7 +7,8 @@ declared PLANNED so results are never fabricated for unbuilt components.
     D  C + Mem0 lifecycle extraction — implemented (extract -> retrieve-similar -> resolve)
     E  D + graph memory              — implemented (module + wiring); requires a live Neo4j
                                        to execute end-to-end, so not scored offline
-    F  E + RL memory policy          — PLANNED
+    F  E + RL memory policy          — implemented (experimental); GRPO-trained resolver
+                                       policy, runs offline on the local fixtures
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ STATUS = {
     "C_orchestrator": "implemented",
     "D_lifecycle": "implemented",
     "E_graph": "requires_neo4j",
-    "F_rl_policy": "planned",
+    "F_rl_policy": "implemented_experimental",
 }
 
 
@@ -29,11 +30,13 @@ def run() -> dict:
         "A_no_memory": evaluate("no_memory"),
         "C_orchestrator": evaluate("orchestrator"),
         "D_lifecycle": evaluate("lifecycle"),
+        "F_rl_policy": evaluate("rl_policy"),
     }
     return {
         "status": STATUS,
         "results": results,
-        "note": "B/E/F are not executed here; B needs a live Qdrant, E needs a live Neo4j "
-        "(the module + agent wiring exist and are unit-tested with a fake driver), F is "
-        "unbuilt. No numbers are reported for configs that were not actually run.",
+        "note": "B and E are not executed here (B needs a live Qdrant; E needs a live Neo4j "
+        "— its module + agent wiring exist and are unit-tested with a fake driver). F is "
+        "experimental: a small GRPO-trained linear policy over the resolve decision, scored "
+        "on the same local fixtures. No numbers are reported for configs that were not run.",
     }

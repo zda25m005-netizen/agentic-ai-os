@@ -20,7 +20,8 @@ No paper benchmarks are reproduced or claimed.
 | MemGPT-style context controller (budget/prioritize/evict) wired into `planner_node` | **Implemented** (config D) |
 | Optional LLM candidate extraction (`MEMORY_POLICY_MODE=llm`, deterministic fallback) | **Implemented** |
 | Graph memory (owner-scoped entity/relationship, reuse `app/graph` Neo4j client) | **Implemented** (config E) |
-| LLM / RL (GRPO) memory policy + training + RL env | **Planned / Experimental** (config F) |
+| Pluggable resolver policy (deterministic default; learned policy behind one interface) | **Implemented** (config F) |
+| RL memory policy: GRPO trainer + decision env + weights, wired into the resolver | **Implemented / Experimental** (config F) |
 
 ## Architecture (implemented core)
 
@@ -84,6 +85,36 @@ RAG graph's `:Entity` / `:RELATION`), and recall traverses only the current owne
 - **Owner isolation.** Every MATCH/MERGE filters on `$owner`; one owner's graph is never
   traversed for another (tested).
 
+## RL memory policy (config F, experimental)
+
+The Mem0 resolver's `NOOP / UPDATE / ADD` decision is factored out behind a one-method
+interface (`app/memory/policy.py`) so the *same* lifecycle code can run either the
+hand-written rules or a learned policy:
+
+- **`DeterministicPolicy`** reproduces the original threshold logic byte-for-byte and is the
+  default. `resolve_and_ingest` builds one when no policy is passed, so all prior behavior
+  and tests are unchanged.
+- **`LinearPolicy`** is a numpy softmax over a small feature vector (similarity, correction
+  cue, has-neighbor, exact-match) — inference needs only numpy, no torch/trl. Illegal
+  actions (UPDATE/NOOP with no neighbor) are clamped to ADD.
+- **Training** (`app/memory/rl/`): a labelled one-step decision env (`env.py`) with rewards
+  shaped from the engine's own failure modes (stale leak penalised hardest), and a minimal
+  **GRPO** trainer (`grpo.py`) whose defining move is the *group-relative advantage* — sample
+  a group of actions per state, standardize their rewards within the group (no critic), and
+  push toward the above-average ones. Seeded and offline; `python -m app.memory.rl.train`
+  writes `memory_policy.json` and prints a report.
+- **Wired in:** `finalize_node` calls `get_policy(MEMORY_POLICY_MODE, weights_path=...)` and
+  passes it to the resolver. With `MEMORY_POLICY_MODE=rl` and a weights file present, the
+  learned policy makes the decision; otherwise it falls back to deterministic — so the safe
+  path is always the default.
+
+On the local fixtures the GRPO policy converges (mean greedy reward ≈ 0.18 → 0.95, ~97%
+action accuracy) and, run through the eval harness (`evaluate("rl_policy")`), recovers
+config-D quality (precision 0.875, recall 1.0, zero stale leaks) — it learned the resolve
+decision from reward alone. This is honest, small-scale plumbing: a linear policy over a
+3-action decision on hand-written fixtures, **not** a reproduction of GRPO on an LLM or any
+published benchmark.
+
 ## Guarantees (encoded + tested)
 
 - **Current request is authoritative.** `build_context` returns memory clearly labelled
@@ -102,17 +133,20 @@ RAG graph's `:Entity` / `:RELATION`), and recall traverses only the current owne
 - `MEMORY_POLICY_MODE` — `deterministic` (default, always works) | `llm` | `rl` (experimental, gated).
 - `MEMORY_GRAPH_ENABLED` — `false` (default) | `true`. When true and a live Neo4j answers,
   graph memory (config E) ingests + recalls owner-scoped triples; otherwise it is a no-op.
+- `MEMORY_POLICY_WEIGHTS` — path to the trained RL policy weights (config F, default
+  `memory_policy.json`). Used only when `MEMORY_POLICY_MODE=rl`; missing/invalid → deterministic.
 - Neo4j (`NEO4J_*`) and Qdrant (`QDRANT_URL`) remain optional; graph memory reuses the existing Neo4j client.
 
 ## Evaluation
 
 `python -c "from app.memory.eval.ablation import run; import json; print(json.dumps(run(), default=str, indent=2))"`
 
-Runs the local fixtures for **A (no memory)**, **C (orchestrator)**, and **D (orchestrator +
-Mem0 lifecycle + MemGPT context controller)**. B requires a live Qdrant and E requires a live
-Neo4j, so both are skipped offline (E's module + wiring exist and are unit-tested with a fake
-driver); F is unbuilt. No numbers are reported for configs that were not actually run. Metrics:
-precision, recall, stale-leak, irrelevant-leak, retrieved tokens.
+Runs the local fixtures for **A (no memory)**, **C (orchestrator)**, **D (orchestrator +
+Mem0 lifecycle + MemGPT context controller)**, and **F (D with the GRPO-trained resolver
+policy)**. B requires a live Qdrant and E requires a live Neo4j, so both are skipped offline
+(E's module + wiring exist and are unit-tested with a fake driver). F is experimental and runs
+offline. No numbers are reported for configs that were not actually run. Metrics: precision,
+recall, stale-leak, irrelevant-leak, retrieved tokens.
 
 On the local fixtures, config D improves precision over C (0.708 → 0.875) and reduces
 irrelevant-leak (3 → 1) at recall 1.0 with zero stale leaks. These are small hand-written
@@ -122,12 +156,14 @@ fixtures, **not** the published LongMemEval benchmark — no paper numbers are c
 
 - `app/memory/records.py`, `app/memory/store.py`, `app/memory/orchestrator.py`
 - `app/memory/lifecycle.py` (Mem0), `app/memory/context.py` (MemGPT),
-  `app/memory/graph_memory.py` (graph memory) — wired into `app/agents/planner.py`
-  and `app/agents/graph.py`
+  `app/memory/graph_memory.py` (graph memory), `app/memory/policy.py` (pluggable resolver
+  policy), `app/memory/rl/{env,grpo,train}.py` (GRPO training) — wired into
+  `app/agents/planner.py` and `app/agents/graph.py`
 - `app/api/memory.py` (router incl. `/memory/graph`), registered in `app/api/main.py`
   (orchestrator installed in lifespan)
 - `app/memory/eval/{dataset,metrics,harness,ablation}.py`
 - `frontend/app/lib/memoryApi.ts` (now calls `/memory`)
 - `tests/test_memory_orchestrator.py`, `tests/test_memory_eval.py`,
   `tests/test_memory_lifecycle.py`, `tests/test_memory_context.py`,
-  `tests/test_memory_agent_wiring.py`, `tests/test_graph_memory.py`
+  `tests/test_memory_agent_wiring.py`, `tests/test_graph_memory.py`,
+  `tests/test_memory_policy.py`, `tests/test_memory_rl.py`

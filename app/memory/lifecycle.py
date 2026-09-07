@@ -18,6 +18,7 @@ import re
 from collections.abc import Awaitable, Callable
 
 from app.memory.orchestrator import MemoryOrchestrator
+from app.memory.policy import ADD, NOOP, UPDATE, DeterministicPolicy, MemoryPolicy
 
 ChatFn = Callable[[list[dict]], Awaitable[str]]
 
@@ -139,8 +140,16 @@ def resolve_and_ingest(
     mission_id: int | None = None,
     dup_threshold: float = 0.8,
     correction_threshold: float = 0.25,
+    policy: MemoryPolicy | None = None,
 ) -> dict:
-    """Retrieve-similar + resolver. Returns operation counts + details."""
+    """Retrieve-similar + resolver. Returns operation counts + details.
+
+    The NOOP/UPDATE/ADD decision is delegated to ``policy`` (config F). The default is a
+    ``DeterministicPolicy`` built from the same thresholds, so the behavior is byte-for-byte
+    identical to the original rule set — an RL policy only takes over when one is passed in.
+    """
+    if policy is None:
+        policy = DeterministicPolicy(dup_threshold, correction_threshold)
     ops = {"ADD": 0, "UPDATE": 0, "NOOP": 0}
     details: list[dict] = []
     for c in candidates:
@@ -148,14 +157,25 @@ def resolve_and_ingest(
         similar, _ = orch.retrieve(content, limit=5)
         best = max(similar, key=lambda r: _jaccard(content, r.content), default=None)
         best_sim = _jaccard(content, best.content) if best else 0.0
+        exact = bool(best and content.strip().lower() == best.content.strip().lower())
 
-        if best and (
-            best_sim >= dup_threshold or content.strip().lower() == best.content.strip().lower()
-        ):
+        action = policy.decide(
+            {
+                "best_sim": best_sim,
+                "is_correction": bool(c.get("is_correction")),
+                "has_best": best is not None,
+                "exact_match": exact,
+            }
+        )
+        # A learned policy may pick an action illegal for this state; clamp to ADD.
+        if action in (NOOP, UPDATE) and best is None:
+            action = ADD
+
+        if action == NOOP:
             orch.reinforce(best.id)  # near-duplicate -> reinforce, don't duplicate
             ops["NOOP"] += 1
             details.append({"op": "NOOP", "target": best.id})
-        elif best and c.get("is_correction") and best_sim >= correction_threshold:
+        elif action == UPDATE:
             rec = orch.supersede(best.id, content, source=c["source"], confidence=c["confidence"])
             ops["UPDATE"] += 1
             details.append({"op": "UPDATE", "target": best.id, "new": rec.id if rec else None})

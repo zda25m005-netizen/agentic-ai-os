@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     # Neo4j subgraph and recall related triples. Optional; only active when a live Neo4j
     # answers verify_connectivity, otherwise every graph-memory call is a safe no-op.
     memory_graph_enabled: bool = Field(default=False)
+    # RL memory policy (config F, experimental): weights file for the learned resolver
+    # policy. Used only when memory_policy_mode == "rl"; falls back to deterministic when
+    # the file is missing or unreadable, so the default path is always safe.
+    memory_policy_weights: str = Field(default="memory_policy.json")
 
     # Langfuse tracing (optional; export runs when both keys are set)
     langfuse_public_key: str = Field(default="")

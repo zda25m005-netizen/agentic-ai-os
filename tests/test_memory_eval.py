@@ -17,12 +17,21 @@ def test_no_stale_leak_on_temporal_update():
     assert rows["additive_preferences"]["recall"] == 1.0  # both kept
 
 
-def test_ablation_runs_D_and_marks_rl_planned():
+def test_ablation_runs_DF_and_marks_status():
     abl = run()
     assert abl["status"]["D_lifecycle"] == "implemented"
-    assert abl["status"]["F_rl_policy"] == "planned"
+    assert abl["status"]["F_rl_policy"] == "implemented_experimental"
+    assert abl["status"]["E_graph"] == "requires_neo4j"
     assert "C_orchestrator" in abl["results"] and "D_lifecycle" in abl["results"]
-    assert "E_graph" not in abl["results"]  # unbuilt configs report no numbers
+    assert "F_rl_policy" in abl["results"]  # config F runs offline
+    assert "E_graph" not in abl["results"]  # needs a live Neo4j -> reports no numbers
+
+
+def test_rl_policy_config_matches_lifecycle_quality():
+    # The GRPO-trained policy should recover lifecycle-grade quality on the fixtures:
+    # full recall and no stale leaks (it learned the resolve decision from reward alone).
+    f = evaluate("rl_policy")["aggregate"]
+    assert f["avg_recall"] == 1.0 and f["total_stale_leak"] == 0
 
 
 def test_lifecycle_config_reduces_irrelevant_leak():

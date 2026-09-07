@@ -25,6 +25,7 @@ checkpoints/
 adapters/
 qdrant_storage/
 neo4j_data/
+memory_policy.json   # trained RL memory-policy weights (config F); regenerate via `python -m app.memory.rl.train`
 
 # Notebooks
 .ipynb_checkpoints/
