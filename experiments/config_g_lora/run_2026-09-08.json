@@ -1,0 +1,78 @@
+{
+  "experiment": "config_G_llm_memory_policy_lora_grpo",
+  "status": "BLOCKED_NOT_RUN",
+  "date_utc": "2026-09-08",
+  "summary": "End-to-end LoRA/QLoRA GRPO training of the config-G LLM memory policy could NOT be executed in this environment. No training was performed and no trained-policy metrics exist. Baseline (non-LLM) metrics were measured and are recorded below. Deterministic policy remains the production default.",
+
+  "intended_configuration": {
+    "model_identifier": "Qwen/Qwen2.5-0.5B-Instruct",
+    "adapter": "LoRA (r=8, alpha=16, target_modules=[q_proj, v_proj]); QLoRA 4-bit optional via bitsandbytes",
+    "trainer": "app.memory.rl.llm_grpo.LLMGRPOTrainer (GRPO, group-relative advantage on action-token log-probs)",
+    "optimizer": "AdamW, lr=1e-4",
+    "group_size": 8,
+    "seed": 0,
+    "dataset": "app.memory.trajectory.TrajectoryMemoryEnv (labelled agent-trajectory decision steps)",
+    "dataset_size_trajectories": 100,
+    "dataset_size_decision_steps": 401,
+    "planned_epochs": 1,
+    "planned_max_states": 64,
+    "planned_optimizer_steps": 64,
+    "checkpoint_path": null,
+    "checkpoint_note": "No adapter was written because training did not run."
+  },
+
+  "hardware_probed": {
+    "os": "Linux aarch64 (Ubuntu 22.04 kernel 6.8)",
+    "cpu_cores": 4,
+    "ram_total": "3.8 GiB",
+    "ram_available": "3.5 GiB",
+    "gpu": "none (nvidia-smi absent, no /dev/nvidia* devices)",
+    "disk_free": "5.1 GiB"
+  },
+
+  "blockers": [
+    {
+      "id": "no_gpu",
+      "severity": "hard",
+      "evidence": "nvidia-smi: command not found; no /dev/nvidia* devices",
+      "impact": "No CUDA accelerator. QLoRA (bitsandbytes 4-bit) requires CUDA and additionally has no aarch64 build, so QLoRA is impossible here. CPU LoRA of a 0.5B model on 4 cores is not viable for a meaningful run."
+    },
+    {
+      "id": "model_weights_unreachable",
+      "severity": "hard",
+      "evidence": "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/config.json -> Tunnel connection failed: 403 Forbidden",
+      "impact": "The configured open-weight model cannot be downloaded from this environment; huggingface.co is not on the network allowlist. Even with deps installed, no weights can be fetched."
+    },
+    {
+      "id": "ml_deps_absent",
+      "severity": "hard",
+      "evidence": "torch/transformers/peft/bitsandbytes/accelerate all report MISSING",
+      "impact": "The finetune extra is not installed. PyPI IS reachable (HTTP 200), so `pip install -e .[finetune]` would install on a supported host, but that does not resolve the GPU or model-download blockers."
+    },
+    {
+      "id": "ram_marginal",
+      "severity": "soft",
+      "evidence": "3.8 GiB total RAM",
+      "impact": "A 0.5B-param fp32 model needs ~2 GiB for weights alone plus framework + autograd; loading is likely to OOM or thrash on this host even before the network/GPU blockers."
+    }
+  ],
+
+  "measured_baselines_no_training_no_model": {
+    "note": "These are REAL measurements of the existing non-LLM policies on the real trajectory env and lifecycle eval. They are the baseline column only; there is NO trained-policy column because training did not run. Nothing here is extrapolated.",
+    "seed": 0,
+    "trajectory_env": {"trajectories": 100, "decision_steps": 401},
+    "policy_action_accuracy": {
+      "heuristic_six_action_policy": 0.98,
+      "per_op": {"STORE": 1.0, "RETRIEVE": 1.0, "UPDATE": 1.0, "SUMMARIZE": 0.8961, "DISCARD": 1.0, "NOOP": 1.0},
+      "uniform_random_reference": 0.1671
+    },
+    "memory_retrieval_accuracy_lifecycle_config_D": {"precision": 0.875, "recall": 1.0},
+    "temporal_update": {"total_stale_leak": 0},
+    "decision_latency_heuristic": {"mean_ms": 0.0, "p50_ms": 0.0, "p95_ms": 0.0, "note": "sub-microsecond per decision; rounds to 0.0 ms at 3 dp", "n": 401},
+    "task_success": "not measured (requires a downstream task harness, out of scope for this baseline snapshot)",
+    "token_efficiency": "not measured (requires the summarize/compress path over a real context budget with the trained policy)"
+  },
+
+  "trained_policy_results": null,
+  "trained_policy_results_note": "INTENTIONALLY NULL. No LoRA/QLoRA training was executed, so no trained-policy metrics are reported. Fabricating or extrapolating them was explicitly disallowed."
+}
