@@ -11,8 +11,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
+import app.agent_registry.models  # noqa: F401  (register agents table on Base)
 import app.missions.models  # noqa: F401  (register mission tables on Base)
 from app.agents.graph import run_agent
+from app.api.agents import characters_router
+from app.api.agents import router as agents_router
 from app.api.anomaly import router as anomaly_router
 from app.api.jobs import router as jobs_router
 from app.api.memory import router as memory_router
@@ -106,6 +109,8 @@ app.include_router(scholarships_router)
 app.include_router(phd_router)
 app.include_router(sop_router)
 app.include_router(memory_router)
+app.include_router(agents_router)
+app.include_router(characters_router)
 # Versioned API surface (same routers under /v1) for stable clients.
 app.include_router(missions_router, prefix="/v1")
 app.include_router(anomaly_router, prefix="/v1")

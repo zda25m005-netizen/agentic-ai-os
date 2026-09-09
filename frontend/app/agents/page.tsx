@@ -1,65 +1,117 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import "../agents.css";
-import Icon from "../components/Icon";
-import AgentMetrics from "../components/agents/AgentMetrics";
-import AgentGrid from "../components/agents/AgentGrid";
-import AgentLoop from "../components/agents/AgentLoop";
-import AgentDetailDrawer from "../components/agents/AgentDetailDrawer";
-import { AGENTS, AgentView, RoleGroup, ROLE_GROUPS } from "../lib/agentsData";
-import { api } from "../lib/api";
+// Agents page (Phase 4) — the agent-first experience.
+// YOUR AGENTS (real, persisted, owner-scoped) + BUILT-IN AGENTS (templates) + create/run.
+// Everything is backed by the real /agents + /characters API — no fabricated data.
+// The internal planner/executor/critic loop is a runtime detail and lives under Observability.
+
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import AgentCharacter from "../components/AgentCharacter";
+import { type AgentState, STATE_LABEL } from "../lib/characters";
+import {
+  type AgentDTO,
+  type TemplateDTO,
+  createAgent,
+  deleteAgent,
+  listAgents,
+  listTemplates,
+  pauseAgent,
+  resumeAgent,
+  runAgent,
+} from "../lib/agentsApi";
 
 export default function AgentsPage() {
-  const [query, setQuery] = useState("");
-  const [role, setRole] = useState<RoleGroup | "all">("all");
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [missions, setMissions] = useState<number | null>(null);
+  const [agents, setAgents] = useState<AgentDTO[] | null>(null);
+  const [templates, setTemplates] = useState<TemplateDTO[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
 
-  useEffect(() => { api.listMissions().then((m) => setMissions(m.length)).catch(() => setMissions(null)); }, []);
+  const refresh = useCallback(async () => {
+    try {
+      const [a, t] = await Promise.all([listAgents(), listTemplates()]);
+      setAgents(a);
+      setTemplates(t);
+      setError(null);
+    } catch {
+      setError("Can't reach the agent service. Start the API (uvicorn app.api.main:app --port 8000).");
+      setAgents([]);
+    }
+  }, []);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return AGENTS.filter((a) => {
-      if (role !== "all" && a.role !== role) return false;
-      if (!q) return true;
-      return [a.name, a.role, a.description, ...a.responsibilities, ...a.tools].join(" ").toLowerCase().includes(q);
-    });
-  }, [query, role]);
+  useEffect(() => { refresh(); }, [refresh]);
 
-  const open = AGENTS.find((a) => a.id === openId) || null;
+  async function withBusy(key: string, fn: () => Promise<unknown>) {
+    setBusy(key);
+    try { await fn(); await refresh(); } catch { /* surfaced via refresh */ } finally { setBusy(null); }
+  }
+
+  const createFromTemplate = (t: TemplateDTO) =>
+    withBusy(`tpl-${t.id}`, () => createAgent({ template_id: t.id }));
 
   return (
-    <div className="ag">
-      <div className="wrap">
-        <div className="head">
-          <div>
-            <h1 className="h1">Agents</h1>
-            <p className="h-sub">Role-specialized agents that plan, execute, evaluate, and complete missions.</p>
-          </div>
-          <div className="search">
-            <Icon name="search" size={15} />
-            <input placeholder="Search agents..." value={query} onChange={(e) => setQuery(e.target.value)} />
-          </div>
+    <div className="page">
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">Agents</h1>
+          <p className="page-sub">Your own team of AI workers — each with a job, tools, memory and a character.</p>
         </div>
-
-        <AgentMetrics missions={missions} />
-
-        <div className="filters">
-          <button className={`chip ${role === "all" ? "active" : ""}`} onClick={() => setRole("all")}>All</button>
-          {ROLE_GROUPS.map((r) => (
-            <button key={r} className={`chip ${role === r ? "active" : ""}`} onClick={() => setRole(r)}>{r}</button>
-          ))}
-        </div>
-
-        <div className="sec-h">Agents</div>
-        <AgentGrid agents={filtered} onOpen={(a: AgentView) => setOpenId(a.id)} />
-
-        <div className="sec-h">Agent Loop</div>
-        <AgentLoop />
+        <Link href="/agents/new" className="agent-btn">+ Create agent</Link>
       </div>
 
-      {open && <AgentDetailDrawer agent={open} onClose={() => setOpenId(null)} />}
+      {error && <div className="ag-note">{error}</div>}
+
+      {/* YOUR AGENTS */}
+      <div className="sec-title" style={{ marginBottom: 12 }}>Your agents</div>
+      {agents === null ? (
+        <div className="ag-note">Loading your team…</div>
+      ) : agents.length === 0 ? (
+        <div className="ag-empty">
+          <AgentCharacter character="nova" state="idle" size={72} />
+          <div style={{ fontWeight: 600, marginTop: 8 }}>Your AI team starts here.</div>
+          <div className="page-sub" style={{ marginTop: 2 }}>Create your first agent from a template below.</div>
+        </div>
+      ) : (
+        <div className="team-grid">
+          {agents.map((a) => (
+            <div key={a.id} className="team-card">
+              <AgentCharacter character={a.character_id} state={(a.status as AgentState) || "idle"} size={72} />
+              <div className="team-name">{a.name}</div>
+              <div className="team-purpose">{a.purpose || a.description || "—"}</div>
+              <div className={`team-status s-${a.status}`}>{STATE_LABEL[a.status as AgentState] || a.status}</div>
+              <div className="team-meta">
+                {a.tools.length} tool{a.tools.length === 1 ? "" : "s"}
+                {a.last_run_at ? " · ran " + new Date(a.last_run_at * 1000).toLocaleDateString() : " · never run"}
+              </div>
+              <div className="team-actions">
+                <button className="agent-btn" disabled={busy === `run-${a.id}`} onClick={() => withBusy(`run-${a.id}`, () => runAgent(a.id))}>Run task</button>
+                {a.status === "paused"
+                  ? <button className="icon-btn" onClick={() => withBusy(`rs-${a.id}`, () => resumeAgent(a.id))}>Resume</button>
+                  : <button className="icon-btn" onClick={() => withBusy(`ps-${a.id}`, () => pauseAgent(a.id))}>Pause</button>}
+                <button className="icon-btn danger" onClick={() => withBusy(`del-${a.id}`, () => deleteAgent(a.id))}>Delete</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* BUILT-IN AGENTS / TEMPLATES */}
+      <div className="sec-title" style={{ margin: "28px 0 12px" }}>Built-in agents</div>
+      <div className="team-grid">
+        {templates.map((t) => (
+          <div key={t.id} className="team-card">
+            <AgentCharacter character={t.character_id} state="idle" size={64} />
+            <div className="team-name">{t.name}</div>
+            <div className="team-purpose">{t.description}</div>
+            <div className="team-meta">{t.tools.slice(0, 3).join(" · ")}</div>
+            <div className="team-actions">
+              <button className="agent-btn" disabled={busy === `tpl-${t.id}`} onClick={() => createFromTemplate(t)}>
+                {busy === `tpl-${t.id}` ? "Creating…" : "Create agent"}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
