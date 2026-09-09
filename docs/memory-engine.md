@@ -171,6 +171,13 @@ six-action space, trained by GRPO on actual agent trajectories.
 - **Disabled by default.** Activated only by `MEMORY_POLICY_MODE=rl` + `MEMORY_POLICY_BACKEND=llm`;
   otherwise the deterministic policy runs and nothing loads torch.
 
+**First real run (2026-09-09, controlled pilot).** On a Kaggle Tesla T4 (QLoRA 4-bit, 64 GRPO
+steps, ~20 s), the base Qwen2.5-0.5B policy went from **0.3491 → 0.98 policy-action accuracy**
+(Δ +0.6309), *matching* the heuristic ceiling — GRPO taught the model the six-action decision
+from reward. It does not beat the heuristic (Δ 0.00), and the adapter is ~17× slower per
+decision (unmerged LoRA). Full numbers + honest caveats: `experiments/config_g_lora/RESULTS.md`.
+Retrieval / temporal / task / token metrics remain `not_measured` (need a downstream harness).
+
 ### Metrics — kept honest and separate
 
 A single "accuracy" number would be misleading, so `app/memory/metrics_suite.py` computes and

@@ -1,7 +1,15 @@
 # Config G — LLM memory policy LoRA/QLoRA training run
 
-**Status: BLOCKED — training did not run. No trained-policy results exist.**
-Date (UTC): 2026-09-08. Machine-readable record: [`run_2026-09-08.json`](run_2026-09-08.json).
+**Status: COMPLETED on GPU (2026-09-09).** First real trained-policy run finished on a
+Kaggle Tesla T4 — see **[`RESULTS.md`](RESULTS.md)** and [`results.json`](results.json).
+Headline: base Qwen **0.3491 → trained QLoRA 0.98** policy-action accuracy (Δ +0.6309),
+matching the heuristic ceiling. The earlier local attempt is retained below as the blocker
+record ([`run_2026-09-08.json`](run_2026-09-08.json)); reproduce via
+[`kaggle_config_g_lora.ipynb`](kaggle_config_g_lora.ipynb) / [`KAGGLE_RUN.md`](KAGGLE_RUN.md).
+
+---
+
+## Local attempt (2026-09-08) — BLOCKED_NOT_RUN
 
 This is an honest experiment log. The end-to-end LoRA/QLoRA GRPO training of the config-G
 LLM memory policy could **not** be executed in the available environment. Per the run

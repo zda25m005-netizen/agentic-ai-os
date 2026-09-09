@@ -78,10 +78,11 @@ class LLMGRPOTrainer:
         from peft import LoraConfig, get_peft_model
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
+        on_gpu = torch.cuda.is_available()
         tok = AutoTokenizer.from_pretrained(self.model_name)
-        kwargs = {"torch_dtype": torch.float32}
+        kwargs = {"torch_dtype": torch.float16 if on_gpu else torch.float32}
         if self.quantized:
-            # QLoRA: 4-bit base weights, trainable LoRA adapter on top.
+            # QLoRA: 4-bit base weights, trainable LoRA adapter on top (CUDA required).
             from transformers import BitsAndBytesConfig
 
             kwargs = {
@@ -89,9 +90,16 @@ class LLMGRPOTrainer:
                     load_in_4bit=True,
                     bnb_4bit_quant_type="nf4",
                     bnb_4bit_compute_dtype=torch.float16,
-                )
+                ),
+                "device_map": "auto",
             }
         model = AutoModelForCausalLM.from_pretrained(self.model_name, **kwargs)
+        if self.quantized:
+            from peft import prepare_model_for_kbit_training
+
+            model = prepare_model_for_kbit_training(model)
+        elif on_gpu:
+            model = model.to("cuda")
         lora = LoraConfig(
             r=self.lora_r,
             lora_alpha=self.lora_alpha,
@@ -126,6 +134,7 @@ class LLMGRPOTrainer:
         env = env or TrajectoryMemoryEnv(seed=self.seed)
         tok, model = self._build_model()
         model.train()
+        device = next(model.parameters()).device
         opt = torch.optim.AdamW((p for p in model.parameters() if p.requires_grad), lr=self.lr)
         rng = np.random.default_rng(self.seed)
         # token ids for each action word, used to score sampled actions
@@ -141,11 +150,11 @@ class LLMGRPOTrainer:
                 prompt = tok.apply_chat_template(
                     messages, tokenize=False, add_generation_prompt=True
                 )
-                inputs = tok(prompt, return_tensors="pt")
+                inputs = tok(prompt, return_tensors="pt").to(device)
                 logits = model(**inputs).logits[0, -1]  # next-token logits
                 logp = torch.log_softmax(logits, dim=-1)
                 act_logp = torch.stack([logp[i] for i in action_ids])  # log π over 6 ops
-                probs = torch.softmax(act_logp.detach(), dim=-1).numpy()
+                probs = torch.softmax(act_logp.detach(), dim=-1).float().cpu().numpy()
                 sampled = rng.choice(len(OPS), size=self.group_size, p=probs / probs.sum())
                 rewards = [env.reward(s, MemoryOp(int(a))) for a in sampled]
                 adv = group_advantages(rewards)

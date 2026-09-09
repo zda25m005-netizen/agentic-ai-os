@@ -110,11 +110,16 @@ class LLMMemoryPolicy:
             from transformers import AutoModelForCausalLM, AutoTokenizer
 
             tok = AutoTokenizer.from_pretrained(self.model_name)
-            model = AutoModelForCausalLM.from_pretrained(self.model_name, torch_dtype=torch.float32)
+            # Use fp16 on GPU, fp32 on CPU; place on CUDA when available (no-op on CPU).
+            on_gpu = torch.cuda.is_available()
+            dtype = torch.float16 if on_gpu else torch.float32
+            model = AutoModelForCausalLM.from_pretrained(self.model_name, torch_dtype=dtype)
             if self.adapter_path:
                 from peft import PeftModel
 
                 model = PeftModel.from_pretrained(model, self.adapter_path)
+            if on_gpu:
+                model = model.to("cuda")
             model.eval()
             self._tokenizer, self._model = tok, model
             return True
@@ -133,7 +138,7 @@ class LLMMemoryPolicy:
             prompt = self._tokenizer.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=True
             )
-            inputs = self._tokenizer(prompt, return_tensors="pt")
+            inputs = self._tokenizer(prompt, return_tensors="pt").to(self._model.device)
             with torch.no_grad():
                 out = self._model.generate(
                     **inputs, max_new_tokens=self.max_new_tokens, do_sample=False

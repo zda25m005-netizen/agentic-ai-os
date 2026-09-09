@@ -67,3 +67,6 @@ phd_store.db
 sop_store.db
 
 memory_store.db
+
+# Config G LoRA adapter weights (regenerate via the Kaggle notebook)
+experiments/config_g_lora/adapter/
