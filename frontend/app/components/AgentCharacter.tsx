@@ -187,7 +187,9 @@ export default function AgentCharacter({
           : <path {...(body.attrs as any)} fill={c.accent} stroke="#0b0f17" strokeWidth={2.5} />}
         {/* soft belly highlight */}
         <ellipse cx="60" cy="76" rx="18" ry="14" fill="#fff" opacity={0.14} />
-        <Face expr={expr} eyes={c.eyes} />
+        <g className={state === "idle" ? "ac-blink" : ""}>
+          <Face expr={expr} eyes={c.eyes} />
+        </g>
         <Glyph state={state} accent={c.accent} />
       </svg>
     </span>

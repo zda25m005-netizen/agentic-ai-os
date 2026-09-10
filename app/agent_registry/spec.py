@@ -15,6 +15,7 @@ import json
 import re
 from collections.abc import Awaitable, Callable
 
+from app.agent_registry.characters import suggest_character_for_work
 from app.agent_registry.templates import TEMPLATE_MAP
 
 ChatFn = Callable[[list[dict]], Awaitable[str]]
@@ -94,7 +95,9 @@ def deterministic_spec(description: str) -> dict:
         "schedule": schedule,
         "approval_policy": approval,
         "personality": tpl.get("personality", "Friendly"),
-        "suggested_character_id": tpl.get("character_id", "nova"),
+        "suggested_character_id": suggest_character_for_work(
+            desc, personality=tpl.get("personality", ""), fallback=tpl.get("character_id", "nova")
+        ),
         "template_id": tid,
         "generated_by": "deterministic",
     }

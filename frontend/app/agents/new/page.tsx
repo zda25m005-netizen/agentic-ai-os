@@ -43,6 +43,9 @@ export default function CreateAgentPage() {
   useEffect(() => {
     listTemplates().then(setTemplates).catch(() => setErr("Can't reach the agent service (start the API on :8000)."));
     listAgents().then((a) => setUsedChars(a.map((x) => x.character_id))).catch(() => {});
+    // Prefill from Home's ask bar: /agents/new?desc=...
+    const q = new URLSearchParams(window.location.search).get("desc");
+    if (q) { setDesc(q); setMode("describe"); setStep("describe"); }
   }, []);
 
   const freeChar = useMemo(() => {

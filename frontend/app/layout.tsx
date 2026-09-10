@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import "./home.css";
+import "./agentui.css";
 import Sidebar from "./components/Sidebar";
 
 export const metadata: Metadata = {

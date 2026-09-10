@@ -27,9 +27,42 @@ CHARACTERS: list[dict] = [
 CHARACTER_IDS: list[str] = [c["id"] for c in CHARACTERS]
 CHARACTER_MAP: dict[str, dict] = {c["id"]: c for c in CHARACTERS}
 
+_WORK_CHARACTER_ROUTES: list[tuple[str, str]] = [
+    (r"\b(phd|doctoral|doctorate)\b", "luna"),
+    (r"\b(scholarship|bursary)\b", "coco"),
+    (r"\b(resume|\bcv\b|application)\b", "ivy"),
+    (r"\b(statement of purpose|\bsop\b|personal statement)\b", "theo"),
+    (r"\b(interview|coach|practice)\b", "milo"),
+    (r"\b(job\w*|hiring|vacanc\w*|career|opportunit\w*)\b", "peter"),
+    (r"\b(invoice|budget|expense|finance|accounting)\b", "ivy"),
+    (r"\b(data|dataset|csv|spreadsheet|sql|analy[sz])\b", "echo"),
+    (r"\b(email|inbox|reply|message)\b", "momo"),
+    (r"\b(sales|prospect|lead|outreach)\b", "nova"),
+    (r"\b(research|paper|literature|arxiv|citation|summari[sz])\b", "rory"),
+    (r"\b(code|coding|developer|debug|software)\b", "atlas"),
+]
+
 
 def is_valid_character(character_id: str | None) -> bool:
     return bool(character_id) and character_id in CHARACTER_MAP
+
+
+def suggest_character_for_work(text: str, *, personality: str = "", fallback: str = "nova") -> str:
+    """Return the work-matched visual default for a new agent."""
+    import re
+
+    for pattern, character_id in _WORK_CHARACTER_ROUTES:
+        if re.search(pattern, text or "", re.I):
+            return character_id
+    by_personality = {
+        "focused": "atlas",
+        "friendly": "milo",
+        "analytical": "echo",
+        "curious": "nova",
+        "concise": "theo",
+        "creative": "nori",
+    }
+    return by_personality.get(personality.lower(), fallback)
 
 
 def pick_available_character(used_ids: list[str]) -> str:

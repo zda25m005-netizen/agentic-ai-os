@@ -98,3 +98,15 @@ export const generateSpec = (description: string) =>
     method: "POST",
     body: JSON.stringify({ description }),
   }).then((r) => r.spec);
+
+export interface ActivityEvent {
+  agent_id: string;
+  agent_name: string;
+  character_id: string;
+  summary: string;
+  status: string;
+  at: number;
+}
+
+export const ownerActivity = () =>
+  req<{ activity: ActivityEvent[] }>("/agents/activity").then((r) => r.activity);

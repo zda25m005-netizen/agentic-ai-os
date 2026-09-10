@@ -10,7 +10,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.agent_registry.characters import CHARACTERS
+from app.agent_registry.characters import CHARACTERS, suggest_character_for_work
 from app.agent_registry.models import Agent
 from app.agent_registry.repository import AgentRepository
 from app.agent_registry.templates import BUILTIN_TEMPLATES, TEMPLATE_MAP
@@ -141,6 +141,39 @@ async def generate_agent_spec(req: SpecReq) -> dict:
     return {"spec": spec}
 
 
+@router.get("/activity")
+async def owner_activity(
+    repo: AgentRepository = Depends(get_agent_repo),  # noqa: B008
+    missions: MissionRepository = Depends(get_mission_repo),  # noqa: B008
+    owner: str = Depends(get_owner),  # noqa: B008
+    limit: int = 20,
+) -> dict:
+    """Recent real agent runs across all of the owner's agents (for the Home live feed).
+
+    Derived from missions the owner's agents actually spawned — empty when nothing has run.
+    """
+    agents = {a.id: a for a in await repo.list(owner)}
+    all_m = await missions.list(limit=200)
+    events = []
+    for m in all_m:
+        aid = (m.meta or {}).get("agent_id")
+        a = agents.get(aid)
+        if not a:
+            continue
+        events.append(
+            {
+                "agent_id": a.id,
+                "agent_name": a.name,
+                "character_id": a.character_id,
+                "summary": m.objective,
+                "status": m.status.value,
+                "at": m.updated_at,
+            }
+        )
+    events.sort(key=lambda e: e["at"], reverse=True)
+    return {"activity": events[:limit]}
+
+
 # --- CRUD ------------------------------------------------------------------
 @router.get("")
 async def list_agents(
@@ -172,6 +205,12 @@ async def create_agent(
             "approval_policy",
         ):
             fields.setdefault(k, tpl.get(k))
+    if not fields.get("character_id"):
+        work_fields = ("name", "description", "purpose", "instructions")
+        work = " ".join(str(fields.get(k) or "") for k in work_fields)
+        fields["character_id"] = suggest_character_for_work(
+            work, personality=str(fields.get("personality") or "")
+        )
     agent = await repo.create(owner, **fields)
     return to_out(agent)
 
