@@ -87,6 +87,7 @@ export interface AgentW {
   id: string; img: string; color: string; pos: V3; scale: number;
   side: "left" | "right" | "center"; focus: number; quote: string; words: Cap[];
   face: V3; // local offset (from the mascot centre) to the mouth/visor — the arrow's endpoint
+  arm?: [number, number, number, number]; // arrow control tuning [outReach, dip, backReach, backY]
 }
 
 // Focus centers/half-widths come from the rail pacing. Each agent shows only THREE
@@ -108,6 +109,7 @@ export const AGENTS_WORLD: AgentW[] = [
   {
     id: "planner", img: "/mascots/peter-3d-cut.webp", color: COL.planner,
     pos: [3.6, 0.6, Z.planner], scale: 2.6, side: "right", focus: 0.19, face: [0, 0.6, 0.3],
+    arm: [1.2, 0.6, 2.6, 1.1], // route above TASKS/ROUTES on the left
     quote: "I turn one messy goal\ninto work everyone\ncan execute.",
     words: [
       { t: "GOAL", d: [-4.8, 2.5, -3.5], s: 0.95, o: 0.32, rot: [0, 0.06] },

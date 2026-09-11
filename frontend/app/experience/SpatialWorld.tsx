@@ -122,18 +122,26 @@ function AgentBody({ a, index, texture, progress }: { a: typeof AGENTS_WORLD[num
   const quoteTopY = 2.35;
   const lines = a.quote.split("\n").length;
   const nameY = quoteTopY - lines * QS * LH - 0.3;                       // name sits BELOW the quote
-  const head: V3 = [0, 1.35, 0.15];
-  const start: V3 = [ax, nameY - 0.32, az];                             // arrow leaves below the block
+  // A long, cinematic arrow: leaves from just below the text block, journeys out into the
+  // negative space on the quote side, then curves back to finish at the agent's face anchor.
+  const sgn = ax >= 0 ? 1 : -1;                                         // quote side
+  const face = a.face;
+  const [aOut, aDip, aBack, aBackY] = a.arm ?? [1.6, 2.0, 2.5, -0.15];  // arrow control tuning
+  const P0: V3 = [ax + 0.1 * sgn, nameY - 0.42, az];                    // start (breathing room below block)
+  const P1: V3 = [ax + aOut * sgn, nameY - aDip, az - 0.1];             // reach OUT + down through empty space
+  const P2: V3 = [face[0] + aBack * sgn, face[1] + aBackY, face[2] + 0.2]; // swing back at face height, outer side
+  const P3: V3 = [face[0] + 0.12 * sgn, face[1], face[2] + 0.12];       // arrive near the face
   const connector = useMemo(() => {
-    const s = new THREE.Vector3(start[0], start[1], start[2]);
-    const e = new THREE.Vector3(head[0], head[1], head[2]);
-    const c = new THREE.Vector3((s.x + e.x) / 2 + (a.side === "left" ? -0.5 : 0.5), (s.y + e.y) / 2 + 0.2, (s.z + e.z) / 2 + 0.2);
-    return new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(s, c, e), 22, 0.016, 6, false);
-  }, [start[0], start[1], start[2], a.side]);
+    const curve = new THREE.CubicBezierCurve3(new THREE.Vector3(...P0), new THREE.Vector3(...P1), new THREE.Vector3(...P2), new THREE.Vector3(...P3));
+    return new THREE.TubeGeometry(curve, 72, 0.015, 8, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [P0[0], P0[1], P1[0], P1[1], P2[0], P2[1], P3[0], P3[1]]);
+  const idxCount = useMemo(() => (connector.index ? connector.index.count : 0), [connector]);
   const coneQ = useMemo(() => {
-    const dir = new THREE.Vector3(head[0] - start[0], head[1] - start[1], head[2] - start[2]).normalize();
+    const dir = new THREE.Vector3(P3[0] - P2[0], P3[1] - P2[1], P3[2] - P2[2]).normalize();
     return new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-  }, [start[0], start[1], start[2]]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [P2[0], P2[1], P2[2], P3[0], P3[1], P3[2]]);
 
   useFrame(({ camera, clock }) => {
     const g = grp.current; if (!g) return;
@@ -159,8 +167,14 @@ function AgentBody({ a, index, texture, progress }: { a: typeof AGENTS_WORLD[num
     if (annot.current) annot.current.visible = fa > 0.05;
     if (quoteMat.current) quoteMat.current.opacity = fa;
     if (nameMat.current) nameMat.current.opacity = fa * 0.85;
-    if (armMat.current) armMat.current.opacity = fa * 0.5;
-    if (coneMat.current) coneMat.current.opacity = fa * 0.8;
+    // draw the arrow progressively: quote appears, brief pause, then the line travels
+    // across the negative space and the head arrives at the face.
+    const phase = phaseOf(w, a.focus, AGENT_HALF);
+    const drawT = THREE.MathUtils.clamp((phase - 0.18) / 0.42, 0, 1);
+    connector.setDrawRange(0, Math.max(0, Math.floor(idxCount * drawT)));
+    const headIn = THREE.MathUtils.clamp((drawT - 0.85) / 0.15, 0, 1);
+    if (armMat.current) armMat.current.opacity = fa * 0.55;
+    if (coneMat.current) coneMat.current.opacity = fa * 0.85 * headIn;
   });
 
   return (
@@ -181,7 +195,7 @@ function AgentBody({ a, index, texture, progress }: { a: typeof AGENTS_WORLD[num
         <mesh geometry={connector}>
           <meshBasicMaterial ref={armMat} color={a.color} transparent opacity={0} toneMapped={false} depthWrite={false} />
         </mesh>
-        <mesh position={head} quaternion={coneQ}>
+        <mesh position={P3} quaternion={coneQ}>
           <coneGeometry args={[0.06, 0.16, 8]} />
           <meshBasicMaterial ref={coneMat} color={a.color} transparent opacity={0} toneMapped={false} depthWrite={false} />
         </mesh>
