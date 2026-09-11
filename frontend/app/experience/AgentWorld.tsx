@@ -1,77 +1,29 @@
 "use client";
 
-// Persistent agent-universe canvas. Scene OWNERSHIP is driven by ./timeline so only one
-// beat is visible at a time: the hero is empty space, each agent is staged SOLO, the four
-// reunite, then (and only then) the network exists. A cursor force-field disturbs the
-// network's micro-nodes. All per-frame work uses refs/typed arrays — never React state.
+// Persistent World-1 canvas. ABOVE the first agent introduction the camera keeps its
+// original hero keyframes + timing (untouched). FROM the first agent introduction the
+// camera flies a smooth Catmull-Rom rail through ONE continuous spatial world (see
+// ./world + ./SpatialWorld): agents, floating typography, communication, the neural
+// network, mission, brain/memory/governance/artifact, then a full pull-back.
+// All per-frame work uses refs/typed arrays — never React state.
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Stars, useTexture } from "@react-three/drei";
+import { Stars } from "@react-three/drei";
 import { Suspense, useMemo, useRef, type MutableRefObject } from "react";
 import * as THREE from "three";
 import { EDGES, GRAPH_CENTER_Z, KIND_COLOR, NODES, NODE_INDEX } from "./graph";
-import { BAND, SOLO, local, vis } from "./timeline";
+import { BAND } from "./timeline";
+import { BOUNDARY, NEURAL_GROUP_Z, sampleRail, toWorld } from "./world";
+import SpatialWorld from "./SpatialWorld";
 
 type Progress = MutableRefObject<number>;
 type HoverCb = (id: string | null) => void;
 export type DebugInfo = { camZ: number; mascots: Record<string, number>; active: string };
 type DebugRef = MutableRefObject<DebugInfo> | undefined;
 
-// solo staging (x,y) per agent + which mascot texture, and the team-scene home.
-const AGENTS = [
-  { id: "researcher", img: "/mascots/rory-3d-cut.webp", solo: [-1.7, 0.1] as const, team: [-2.6, 0.1, 0] as const },
-  { id: "planner", img: "/mascots/peter-3d-cut.webp", solo: [1.6, 0.3] as const, team: [0, 0.9, -3] as const },
-  { id: "coder", img: "/mascots/ivy-3d-cut.webp", solo: [-1.6, 0.1] as const, team: [2.6, 0.0, -1.5] as const },
-  { id: "analyst", img: "/mascots/luna-3d-cut.webp", solo: [0.2, -0.2] as const, team: [0, -1.7, 0.6] as const },
-];
-const TEAM = BAND.team;
-
-function Mascots({ progress, debug }: { progress: Progress; debug: DebugRef }) {
-  const textures = useTexture(AGENTS.map((a) => a.img));
-  const meshes = useRef<(THREE.Mesh | null)[]>([]);
-  useFrame((state) => {
-    const p = progress.current;
-    const bob = Math.sin(state.clock.elapsedTime * 0.9);
-    AGENTS.forEach((a, i) => {
-      const m = meshes.current[i];
-      if (!m) return;
-      const soloV = vis(p, SOLO[a.id]);
-      const teamV = vis(p, TEAM);
-      const v = Math.max(soloV, teamV);
-      const mat = m.material as THREE.MeshBasicMaterial;
-      if (v < 0.01) { m.visible = false; mat.opacity = 0; if (debug) debug.current.mascots[a.id] = 0; return; }
-      m.visible = true;
-      if (soloV >= teamV) {
-        // SOLO: enter from far, settle, drift out sideways
-        const lp = local(p, SOLO[a.id]);
-        const enter = Math.min(1, lp / 0.4);
-        const es = enter * enter * (3 - 2 * enter);
-        const exit = lp > 0.78 ? (lp - 0.78) / 0.22 : 0;
-        const dir = a.solo[0] >= 0 ? 1 : -1;
-        m.position.set(a.solo[0] + exit * dir * 2.4, a.solo[1] + bob * 0.12, THREE.MathUtils.lerp(-5, 0.2, es));
-        m.scale.setScalar(2.05);
-        mat.opacity = soloV;
-      } else {
-        // TEAM: spatial home + gentle bob
-        m.position.set(a.team[0], a.team[1] + bob * 0.1, a.team[2]);
-        m.scale.setScalar(1.35);
-        mat.opacity = teamV;
-      }
-      if (debug) debug.current.mascots[a.id] = Math.round(mat.opacity * 100) / 100;
-    });
-  });
-  return (
-    <>
-      {AGENTS.map((a, i) => (
-        // plane faces +Z toward the camera; no Billboard (that nesting hid the mesh).
-        <mesh key={a.id} ref={(el) => { meshes.current[i] = el; }} visible={false} position={[a.solo[0], a.solo[1], -5]}>
-          <planeGeometry args={[1, 1.2]} />
-          <meshBasicMaterial map={textures[i]} transparent depthWrite={false} opacity={0} toneMapped={false} />
-        </mesh>
-      ))}
-    </>
-  );
-}
+const NET_SCALE = 1.5;
+// place the group so the graph's centre (local z = GRAPH_CENTER_Z) lands at world Z.neural
+const NET_GROUP_Z = NEURAL_GROUP_Z - NET_SCALE * GRAPH_CENTER_Z;
 
 function Network({ progress, onHover }: { progress: Progress; onHover: HoverCb }) {
   const { camera, pointer } = useThree();
@@ -130,9 +82,9 @@ function Network({ progress, onHover }: { progress: Progress; onHover: HoverCb }
   }), []);
   const flowRef = useRef<THREE.Points>(null);
 
-  // interaction plane sits at the graph's central depth; cursor is raycast onto it, then
-  // converted into the (rotating/scaling) group's local space so forces stay accurate.
-  const plane = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 0, 1), -GRAPH_CENTER_Z), []);
+  // interaction plane sits at the graph's central WORLD depth; cursor is raycast onto it,
+  // then converted into the (offset/scaled/rotating) group's local space so forces stay accurate.
+  const plane = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 0, 1), -NEURAL_GROUP_Z), []);
   const ray = useMemo(() => new THREE.Raycaster(), []);
   const cursorWorld = useMemo(() => new THREE.Vector3(), []);
   const cursorLocal = useMemo(() => new THREE.Vector3(), []);
@@ -153,18 +105,16 @@ function Network({ progress, onHover }: { progress: Progress; onHover: HoverCb }
   };
 
   useFrame((_s, dt) => {
-    const p = progress.current;
-    const appear = vis(p, [BAND.networkReveal[0], 1.01], 0.12); // present from reveal → end
-    const on = appear > 0.01;
+    const w = toWorld(progress.current);
+    const on = w > 0.58; // network emerges from the communication region and stays part of the system
     if (group.current) {
       group.current.visible = on;
-      group.current.rotation.y += dt * 0.015;
-      group.current.scale.setScalar(0.7 + appear * 0.3);
+      group.current.rotation.y += dt * 0.012;
     }
     if (!on) return;
 
     // cursor → world point on the network plane, then into the group's local space
-    // (the group rotates + scales, so forces must be computed in the same frame).
+    // (the group is offset + scaled + rotating, so forces must be computed in that frame).
     ray.setFromCamera(pointer as THREE.Vector2, camera);
     const hit = !touch && !!ray.ray.intersectPlane(plane, cursorWorld);
     if (hit && group.current) { cursorLocal.copy(cursorWorld); group.current.worldToLocal(cursorLocal); }
@@ -294,7 +244,7 @@ function Network({ progress, onHover }: { progress: Progress; onHover: HoverCb }
   const handleOut = () => { hovered.current = null; if (lastReported.current) { lastReported.current = null; onHover(null); } };
 
   return (
-    <group ref={group} visible={false}>
+    <group ref={group} position={[0, 0, NET_GROUP_Z]} scale={NET_SCALE} visible={false}>
       <points ref={microRef}>
         <bufferGeometry><bufferAttribute attach="attributes-position" args={[micro.cur, 3]} /></bufferGeometry>
         <pointsMaterial color="#4a5a7a" size={0.06} transparent opacity={0.7} depthWrite={false} sizeAttenuation />
@@ -320,44 +270,65 @@ function Network({ progress, onHover }: { progress: Progress; onHover: HoverCb }
   );
 }
 
-// camera keyframes anchored to band midpoints
+// ── camera ──────────────────────────────────────────────────────────────────────
+// Pre-boundary: the ORIGINAL hero keyframes, unchanged (hero + "follow the signal").
 const mid = (id: keyof typeof BAND) => (BAND[id][0] + BAND[id][1]) / 2;
 type Key = { p: number; pos: [number, number, number]; look: [number, number, number] };
-const KEYS: Key[] = [
+const HERO_KEYS: Key[] = [
   { p: 0, pos: [0, 0, 9], look: [0, 0.3, 0] },
   { p: mid("hero"), pos: [0, 0, 9], look: [0, 0.3, 0] },
   { p: mid("researcher"), pos: [-1.4, 0.1, 5], look: [-1.6, 0.1, 0] },
-  { p: mid("planner"), pos: [1.4, 0.3, 5], look: [1.5, 0.3, 0] },
-  { p: mid("coder"), pos: [-1.4, 0.1, 5], look: [-1.5, 0.1, 0] },
-  { p: mid("analyst"), pos: [0, -0.1, 5], look: [0.1, -0.2, 0] },
-  { p: mid("team"), pos: [0, 0.3, 8], look: [0, -0.2, -1] },
-  { p: mid("words"), pos: [0, 0, 6.5], look: [0, 0, -2] },
-  { p: mid("comms"), pos: [0, 0.4, 8], look: [0, -0.2, -1] },
-  { p: mid("networkReveal"), pos: [0, 1.0, 11], look: [0, 0, GRAPH_CENTER_Z] },
-  { p: mid("networkExplore"), pos: [0, 0.6, 9.5], look: [0, 0, GRAPH_CENTER_Z] },
-  { p: mid("payoff"), pos: [0, 3, 21], look: [0, 0, GRAPH_CENTER_Z] },
-  { p: 1, pos: [0, 3.4, 24], look: [0, 0, GRAPH_CENTER_Z] },
 ];
 
 function Rig({ progress, debug }: { progress: Progress; debug: DebugRef }) {
-  const { camera, pointer } = useThree();
+  const { camera, pointer, scene } = useThree();
   const pos = useMemo(() => new THREE.Vector3(0, 0, 9), []);
   const look = useMemo(() => new THREE.Vector3(), []);
+  const railPos = useMemo(() => new THREE.Vector3(), []);
+  const railLook = useMemo(() => new THREE.Vector3(), []);
   const curLook = useRef(new THREE.Vector3(0, 0.3, 0));
-  useFrame(() => {
+
+  useFrame(({ clock }) => {
     const p = progress.current;
     if (debug) debug.current.camZ = Math.round(camera.position.z * 10) / 10;
-    let i = 0; while (i < KEYS.length - 1 && p > KEYS[i + 1].p) i++;
-    const a = KEYS[i], b = KEYS[Math.min(i + 1, KEYS.length - 1)];
-    const t = THREE.MathUtils.clamp((p - a.p) / ((b.p - a.p) || 1), 0, 1);
-    const e = t * t * (3 - 2 * t);
-    pos.set(THREE.MathUtils.lerp(a.pos[0], b.pos[0], e), THREE.MathUtils.lerp(a.pos[1], b.pos[1], e), THREE.MathUtils.lerp(a.pos[2], b.pos[2], e));
-    look.set(THREE.MathUtils.lerp(a.look[0], b.look[0], e), THREE.MathUtils.lerp(a.look[1], b.look[1], e), THREE.MathUtils.lerp(a.look[2], b.look[2], e));
-    // reduce cursor parallax while exploring the network (cursor drives nodes there)
-    const explore = vis(p, BAND.networkExplore, 0.2);
-    const par = 0.5 * (1 - explore);
-    camera.position.x += (pos.x + pointer.x * par - camera.position.x) * 0.06;
-    camera.position.y += (pos.y + pointer.y * par * 0.7 - camera.position.y) * 0.06;
+    const t = clock.elapsedTime;
+
+    let parallax = 0.5;
+    if (p < BOUNDARY) {
+      // ORIGINAL behaviour — do not change hero timing/motion.
+      let i = 0; while (i < HERO_KEYS.length - 1 && p > HERO_KEYS[i + 1].p) i++;
+      const a = HERO_KEYS[i], b = HERO_KEYS[Math.min(i + 1, HERO_KEYS.length - 1)];
+      const tt = THREE.MathUtils.clamp((p - a.p) / ((b.p - a.p) || 1), 0, 1);
+      const e = tt * tt * (3 - 2 * tt);
+      pos.set(THREE.MathUtils.lerp(a.pos[0], b.pos[0], e), THREE.MathUtils.lerp(a.pos[1], b.pos[1], e), THREE.MathUtils.lerp(a.pos[2], b.pos[2], e));
+      look.set(THREE.MathUtils.lerp(a.look[0], b.look[0], e), THREE.MathUtils.lerp(a.look[1], b.look[1], e), THREE.MathUtils.lerp(a.look[2], b.look[2], e));
+      if (scene.fog) { (scene.fog as THREE.Fog).near = 14; (scene.fog as THREE.Fog).far = 52; }
+    } else {
+      // THE WORLD — fly the rail. Speed/pacing come from the rail's uneven w spacing.
+      const w = toWorld(p);
+      sampleRail(w, railPos, railLook);
+      // micro-drift so the world keeps breathing even when the user stops scrolling
+      pos.set(railPos.x + Math.sin(t * 0.3) * 0.08, railPos.y + Math.sin(t * 0.23) * 0.06, railPos.z);
+      look.copy(railLook);
+      // reduce cursor parallax while inside the neural network (cursor drives the nodes there)
+      const inNet = w > 0.65 && w < 0.79 ? 1 : 0;
+      parallax = 0.4 * (1 - inNet);
+      // depth fog tightens per region so only the focused region reads crisply; it opens
+      // right up for the final pull-back so the whole system is revealed at once.
+      if (scene.fog) {
+        const f = scene.fog as THREE.Fog;
+        f.near = 11;
+        f.far =
+          w < 0.45 ? 40 :                                           // agent intros — next agent is a silhouette
+          w < 0.62 ? THREE.MathUtils.lerp(40, 54, (w - 0.45) / 0.17) : // floating words / collaborate
+          w < 0.9 ? 62 :                                            // neural + interior regions
+          THREE.MathUtils.lerp(62, 170, (w - 0.9) / 0.1);           // finale reveal
+      }
+    }
+
+    // inertial follow (physical, not welded to scroll) + gentle mouse parallax
+    camera.position.x += (pos.x + pointer.x * parallax - camera.position.x) * 0.06;
+    camera.position.y += (pos.y + pointer.y * parallax * 0.7 - camera.position.y) * 0.06;
     camera.position.z += (pos.z - camera.position.z) * 0.06;
     curLook.current.lerp(look, 0.08);
     camera.lookAt(curLook.current);
@@ -371,14 +342,14 @@ export default function AgentWorld({ progress, onHover, debug }: { progress: Pro
       className="xp-canvas"
       dpr={[1, 1.8]}
       gl={{ antialias: true, powerPreference: "high-performance", alpha: true }}
-      camera={{ position: [0, 0, 9], fov: 55 }}
+      camera={{ position: [0, 0, 9], fov: 55, far: 600 }}
     >
       <fog attach="fog" args={["#07090B", 14, 52]} />
       <ambientLight intensity={0.6} />
       <pointLight position={[6, 6, 6]} intensity={45} color="#6EA8FF" />
       <pointLight position={[-6, -3, 2]} intensity={28} color="#8B7DF6" />
-      <Stars radius={100} depth={70} count={2400} factor={3} saturation={0} fade speed={0.4} />
-      <Suspense fallback={null}><Mascots progress={progress} debug={debug} /></Suspense>
+      <Stars radius={120} depth={80} count={2600} factor={3} saturation={0} fade speed={0.4} />
+      <Suspense fallback={null}><SpatialWorld progress={progress} /></Suspense>
       <Network progress={progress} onHover={onHover} />
       <Rig progress={progress} debug={debug} />
     </Canvas>
