@@ -6,7 +6,7 @@ import { useState } from "react";
 import Icon from "./Icon";
 
 const NAV = [
-  { href: "/", label: "Home", icon: "home" },
+  { href: "/os", label: "Home", icon: "home" },
   { href: "/missions", label: "Missions", icon: "missions" },
   { href: "/agents", label: "Agents", icon: "agents" },
   { href: "/memory", label: "Memory", icon: "memory" },
@@ -30,7 +30,10 @@ const AGENTS = [
 export default function Sidebar() {
   const path = usePathname();
   const [agentsOpen, setAgentsOpen] = useState(true);
-  const active = (href: string) => (href === "/" ? path === "/" : path === href);
+  const active = (href: string) => (href === "/os" ? path === "/os" : path === href);
+
+  // The cinematic landing (World 1) is full-bleed with no control-plane chrome.
+  if (path === "/") return null;
 
   return (
     <aside className="sb">
