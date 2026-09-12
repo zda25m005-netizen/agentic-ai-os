@@ -4,13 +4,14 @@
 // one place. Continuous world, but never simultaneous scenes.
 
 export type SceneId =
-  | "hero" | "t0" | "researcher" | "t1" | "planner" | "t2" | "coder" | "t3"
+  | "intro" | "hero" | "t0" | "researcher" | "t1" | "planner" | "t2" | "coder" | "t3"
   | "analyst" | "t4" | "team" | "words" | "comms" | "networkReveal"
   | "networkExplore" | "payoff";
 
 interface SceneDef { id: SceneId; vh: number; solo?: string }
 
 export const SCENES: SceneDef[] = [
+  { id: "intro", vh: 110 },   // floating particle cloud + wordmark, BEFORE the hero
   { id: "hero", vh: 120 },
   { id: "t0", vh: 60 },
   { id: "researcher", vh: 160, solo: "researcher" },

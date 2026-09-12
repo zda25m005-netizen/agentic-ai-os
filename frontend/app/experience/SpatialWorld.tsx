@@ -33,6 +33,195 @@ function glowTexture(): THREE.CanvasTexture {
   return GLOW;
 }
 
+// ── terrain: a dark mountain valley with a flat corridor the camera travels down ──
+function Terrain({ progress }: { progress: Progress }) {
+  const mat = useRef<THREE.MeshStandardMaterial>(null);
+  const grp = useRef<THREE.Group>(null);
+  const geo = useMemo(() => {
+    const g = new THREE.PlaneGeometry(280, 230, 240, 200);
+    g.rotateX(-Math.PI / 2);
+    const p = g.attributes.position as THREE.BufferAttribute;
+    const hash = (x: number, z: number) => { const s = Math.sin(x * 127.1 + z * 311.7) * 43758.5453; return s - Math.floor(s); };
+    const vn = (x: number, z: number) => {
+      const xi = Math.floor(x), zi = Math.floor(z), xf = x - xi, zf = z - zi;
+      const u = xf * xf * (3 - 2 * xf), v = zf * zf * (3 - 2 * zf);
+      return (hash(xi, zi) * (1 - u) + hash(xi + 1, zi) * u) * (1 - v) + (hash(xi, zi + 1) * (1 - u) + hash(xi + 1, zi + 1) * u) * v;
+    };
+    // ridged multifractal — sharp crests and eroded gullies instead of soft blobs
+    const ridged = (x: number, z: number) => {
+      let sum = 0, amp = 0.5, freq = 1, prev = 1;
+      for (let o = 0; o < 6; o++) {
+        let nn = 1 - Math.abs(vn(x * freq, z * freq) * 2 - 1);
+        nn *= nn;
+        sum += nn * amp * prev;
+        prev = nn;
+        freq *= 2.07; amp *= 0.52;
+      }
+      return sum;
+    };
+    const col = new Float32Array(p.count * 3);
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), z = p.getZ(i);
+      const corridor = Math.min(1, Math.pow(Math.abs(x) / 25, 2.0));  // flat valley floor in the middle
+      const massif = 0.55 + vn(x * 0.008, z * 0.008) * 0.9;           // ranges rise and fall along the route
+      const h = ridged(x * 0.021, z * 0.021) * 30 * massif * corridor;
+      p.setY(i, h);
+      // bare rock low down → lit snow on the crests
+      const s = Math.min(1, Math.pow(h / 20, 1.15));
+      const base = 0.05 + s * 0.72;
+      col[i * 3] = base * 0.94; col[i * 3 + 1] = base * 0.98; col[i * 3 + 2] = base * 1.08;
+    }
+    g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+    g.computeVertexNormals();
+    return g;
+  }, []);
+  // fade the valley out before the camera could ever reach its far edge
+  useFrame(() => {
+    const w = toWorld(progress.current);
+    const o = 1 - THREE.MathUtils.clamp((w - 0.5) / 0.1, 0, 1);
+    if (mat.current) mat.current.opacity = o;
+    if (grp.current) grp.current.visible = o > 0.01;
+  });
+  return (
+    <group ref={grp}>
+      {/* lit from the overhead shaft so crests shade and gullies fall into shadow */}
+      <directionalLight position={[6, 34, -30]} intensity={1.5} color="#d6e6ff" />
+      <mesh geometry={geo} position={[0, -8, -45]}>
+        <meshStandardMaterial ref={mat} vertexColors transparent opacity={1} roughness={0.96} metalness={0} fog />
+      </mesh>
+      {/* mist settling along the valley floor */}
+      {[-20, -52, -84].map((z, i) => (
+        <mesh key={i} position={[0, -5.6, z]}>
+          <planeGeometry args={[150, 24]} />
+          <meshBasicMaterial map={glowTexture()} color="#9db4d4" transparent opacity={0.06}
+            depthWrite={false} toneMapped={false} blending={THREE.AdditiveBlending} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+// ── overhead volumetric light the agents travel beneath ─────────────────────────
+function LightShaft() {
+  return (
+    <group>
+      <mesh position={[0, 13, -60]}>
+        <planeGeometry args={[75, 75]} />
+        <meshBasicMaterial map={glowTexture()} color="#d8e8ff" transparent opacity={0.17} depthWrite={false} toneMapped={false} blending={THREE.AdditiveBlending} />
+      </mesh>
+      <mesh position={[0, 3, -62]}>
+        <planeGeometry args={[30, 46]} />
+        <meshBasicMaterial map={glowTexture()} color="#bcd6ff" transparent opacity={0.06} depthWrite={false} toneMapped={false} blending={THREE.AdditiveBlending} />
+      </mesh>
+    </group>
+  );
+}
+
+// ── a big particle burst just after the COLLABORATE monument ────────────────────
+function Burst({ progress }: { progress: Progress }) {
+  const N = 2600;
+  const grp = useRef<THREE.Group>(null);
+  const pts = useRef<THREE.Points>(null);
+  const mat = useRef<THREE.PointsMaterial>(null);
+  const seed = useMemo(() => {
+    const dir = new Float32Array(N * 3), spd = new Float32Array(N), cur = new Float32Array(N * 3);
+    for (let i = 0; i < N; i++) {
+      const th = Math.random() * Math.PI * 2, ph = Math.acos(2 * Math.random() - 1);
+      dir[i * 3] = Math.sin(ph) * Math.cos(th);
+      dir[i * 3 + 1] = Math.sin(ph) * Math.sin(th) * 0.7;
+      dir[i * 3 + 2] = Math.cos(ph);
+      spd[i] = 0.4 + Math.random() * 1.7;
+    }
+    return { dir, spd, cur };
+  }, []);
+  useFrame(() => {
+    const g = grp.current; if (!g) return;
+    const b = THREE.MathUtils.clamp((toWorld(progress.current) - 0.594) / 0.032, 0, 1);
+    g.visible = b > 0.001 && b < 0.999;
+    if (!g.visible || !pts.current) return;
+    const e = Math.pow(b, 0.55) * 15, { dir, spd, cur } = seed;
+    for (let i = 0; i < N; i++) {
+      const ix = i * 3, k = spd[i] * e;
+      cur[ix] = dir[ix] * k; cur[ix + 1] = dir[ix + 1] * k; cur[ix + 2] = dir[ix + 2] * k;
+    }
+    (pts.current.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+    if (mat.current) mat.current.opacity = Math.sin(b * Math.PI) * 0.9;
+  });
+  return (
+    <group ref={grp} position={[0, 0, Z.comms + 14]} visible={false}>
+      <points ref={pts}>
+        <bufferGeometry><bufferAttribute attach="attributes-position" args={[seed.cur, 3]} /></bufferGeometry>
+        <pointsMaterial ref={mat} color="#dce9ff" size={0.09} transparent opacity={0} sizeAttenuation depthWrite={false} blending={THREE.AdditiveBlending} />
+      </points>
+    </group>
+  );
+}
+
+// ── sample a mascot texture into a particle portrait (the agent AS points) ───────
+const CLOUD = new Map<string, { pos: Float32Array; col: Float32Array; count: number }>();
+function samplePoints(tex: THREE.Texture, step = 7) {
+  const hit = CLOUD.get(tex.uuid); if (hit) return hit;
+  const img = tex.image as HTMLImageElement;
+  const w = img.width || 512, h = img.height || 512;
+  const c = document.createElement("canvas"); c.width = w; c.height = h;
+  const ctx = c.getContext("2d", { willReadFrequently: true })!;
+  ctx.drawImage(img, 0, 0, w, h);
+  const d = ctx.getImageData(0, 0, w, h).data;
+  const pos: number[] = [], col: number[] = [];
+  for (let y = 0; y < h; y += step) for (let x = 0; x < w; x += step) {
+    const i = (y * w + x) * 4;
+    if (d[i + 3] < 50) continue;
+    pos.push(x / w - 0.5, -(y / h - 0.5) * 1.2, 0);
+    col.push(d[i] / 255, d[i + 1] / 255, d[i + 2] / 255);
+  }
+  const out = { pos: new Float32Array(pos), col: new Float32Array(col), count: pos.length / 3 };
+  CLOUD.set(tex.uuid, out);
+  return out;
+}
+
+// the mascot dissolves into drifting particles as the camera passes it
+function AgentDissolve({ a, texture, progress }: { a: typeof AGENTS_WORLD[number]; texture: THREE.Texture; progress: Progress }) {
+  const grp = useRef<THREE.Group>(null);
+  const pts = useRef<THREE.Points>(null);
+  const mat = useRef<THREE.PointsMaterial>(null);
+  const cloud = useMemo(() => samplePoints(texture), [texture]);
+  const dirs = useMemo(() => {
+    const dd = new Float32Array(cloud.count * 3);
+    for (let i = 0; i < cloud.count; i++) {
+      const th = Math.random() * Math.PI * 2, r = 0.4 + Math.random();
+      dd[i * 3] = Math.cos(th) * r; dd[i * 3 + 1] = 0.3 + Math.random() * 1.3; dd[i * 3 + 2] = (Math.random() - 0.5) * r;
+    }
+    return dd;
+  }, [cloud]);
+  const live = useMemo(() => cloud.pos.slice(), [cloud]);
+  useFrame(({ clock }) => {
+    const g = grp.current; if (!g) return;
+    const ds = THREE.MathUtils.clamp((toWorld(progress.current) - (a.focus + AGENT_HALF - 0.004)) / 0.03, 0, 1);
+    g.visible = ds > 0.01 && ds < 0.99;
+    if (!g.visible || !pts.current) return;
+    const t = clock.elapsedTime, e = ds * ds;
+    for (let i = 0; i < cloud.count; i++) {
+      const ix = i * 3;
+      live[ix] = cloud.pos[ix] + dirs[ix] * e * 2.6 + Math.sin(t * 1.3 + i) * 0.012;
+      live[ix + 1] = cloud.pos[ix + 1] + dirs[ix + 1] * e * 2.3;
+      live[ix + 2] = cloud.pos[ix + 2] + dirs[ix + 2] * e * 2.6;
+    }
+    (pts.current.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+    if (mat.current) mat.current.opacity = Math.sin(ds * Math.PI) * 0.95;
+  });
+  return (
+    <group ref={grp} scale={a.scale} visible={false}>
+      <points ref={pts}>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" args={[live, 3]} />
+          <bufferAttribute attach="attributes-color" args={[cloud.col, 3]} />
+        </bufferGeometry>
+        <pointsMaterial ref={mat} vertexColors size={0.04} transparent opacity={0} sizeAttenuation depthWrite={false} />
+      </points>
+    </group>
+  );
+}
+
 // ── world-space text: fog-aware material + distance fade + optional focus window ──
 function WorldText({
   text, pos, size, color, anchorX = "center", baseOpacity = 1,
@@ -99,6 +288,62 @@ function CapWord({ cap, center, color, progress }: { cap: Cap; center: number; c
   );
 }
 
+// ── "showing work": a small characteristic particle motion per agent, focus-gated ──
+// search = orbiting/streaming (rabbit hole); plan = scatter→structure; run = a running
+// loop that flips error→pass; cluster = noise→signal. Sits BEHIND the mascot, subtle.
+function AgentWork({ agent, progress }: { agent: typeof AGENTS_WORLD[number]; progress: Progress }) {
+  const N = 72;
+  const grp = useRef<THREE.Group>(null);
+  const pts = useRef<THREE.Points>(null);
+  const mat = useRef<THREE.PointsMaterial>(null);
+  const d = useMemo(() => {
+    const cur = new Float32Array(N * 3), base = new Float32Array(N * 3), target = new Float32Array(N * 3), phase = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      const a = Math.random() * Math.PI * 2, r = 1.6 + Math.random() * 2.0;
+      base[i * 3] = Math.cos(a) * r; base[i * 3 + 1] = (Math.random() - 0.5) * 3; base[i * 3 + 2] = -0.8 + Math.sin(a) * r * 0.4;
+      target[i * 3] = ((i % 7) - 3) * 0.62; target[i * 3 + 1] = (Math.floor(i / 7) % 5 - 2) * 0.62; target[i * 3 + 2] = -1;
+      phase[i] = Math.random();
+      cur.set([base[i * 3], base[i * 3 + 1], base[i * 3 + 2]], i * 3);
+    }
+    return { cur, base, target, phase };
+  }, []);
+  useFrame(({ clock }) => {
+    const g = grp.current; if (!g) return;
+    const f = focusW(toWorld(progress.current), agent.focus, AGENT_HALF, 0.035);
+    g.visible = f > 0.03;
+    if (!g.visible || !pts.current) return;
+    const t = clock.elapsedTime, { cur, base, target, phase } = d;
+    for (let i = 0; i < N; i++) {
+      const ix = i * 3, ph = phase[i];
+      if (agent.work === "search") {
+        const a = ph * Math.PI * 2 + t * 0.5 * (0.6 + ph), r = 1.6 + (Math.sin(t * 0.7 + ph * 6) * 0.5 + 0.5) * 1.9;
+        cur[ix] = Math.cos(a) * r; cur[ix + 1] = Math.sin(t * 0.4 + ph * 6) * 1.4; cur[ix + 2] = -0.9 + Math.sin(a) * r * 0.4;
+      } else if (agent.work === "plan") {
+        const k = Math.sin(t * 0.5 + ph * 0.6) * 0.5 + 0.5;
+        cur[ix] = THREE.MathUtils.lerp(base[ix], target[ix], k);
+        cur[ix + 1] = THREE.MathUtils.lerp(base[ix + 1], target[ix + 1], k);
+        cur[ix + 2] = THREE.MathUtils.lerp(base[ix + 2], target[ix + 2], k);
+      } else if (agent.work === "run") {
+        const tt = (t * 0.35 + ph) % 1, a = tt * Math.PI * 2;
+        cur[ix] = Math.cos(a) * 2.0; cur[ix + 1] = Math.sin(a) * 1.2; cur[ix + 2] = -0.9;
+      } else { // cluster: noise → signal
+        const k = Math.sin(t * 0.45 + ph * 5) * 0.5 + 0.5, r = THREE.MathUtils.lerp(3.0, 0.5, k), a = ph * Math.PI * 2;
+        cur[ix] = Math.cos(a) * r; cur[ix + 1] = Math.sin(a * 1.3) * r * 0.7; cur[ix + 2] = -0.9;
+      }
+    }
+    (pts.current.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+    if (mat.current) mat.current.opacity = 0.22 * f;
+  });
+  return (
+    <group ref={grp} visible={false}>
+      <points ref={pts}>
+        <bufferGeometry><bufferAttribute attach="attributes-position" args={[d.cur, 3]} /></bufferGeometry>
+        <pointsMaterial ref={mat} color={agent.color} size={0.07} transparent opacity={0} sizeAttenuation depthWrite={false} blending={THREE.AdditiveBlending} />
+      </points>
+    </group>
+  );
+}
+
 // ── one agent: PRIMARY mascot + soft glow, SECONDARY quote+arrow+label, few words ──
 // The quote and the agent name are ONE stacked typographic component (quote, gap, name
 // below) so the label can never land inside the sentence; the arrow leaves from below it.
@@ -108,6 +353,7 @@ function AgentBody({ a, index, texture, progress }: { a: typeof AGENTS_WORLD[num
   const plane = useRef<THREE.Mesh>(null);
   const planeMat = useRef<THREE.MeshBasicMaterial>(null);
   const glowMat = useRef<THREE.MeshBasicMaterial>(null);
+  const poolMat = useRef<THREE.MeshBasicMaterial>(null);
   const annot = useRef<THREE.Group>(null);
   const quoteMat = useRef<THREE.MeshBasicMaterial>(null);
   const nameMat = useRef<THREE.MeshBasicMaterial>(null);
@@ -150,12 +396,14 @@ function AgentBody({ a, index, texture, progress }: { a: typeof AGENTS_WORLD[num
     const w = toWorld(p);
     const f = focusW(w, a.focus, AGENT_HALF, 0.035);         // this agent owns the frame
     const present = fade(camera.position.distanceTo(self), 6, 40);
-    const passed = camera.position.z < a.pos[2] - 6;
+    const passed = camera.position.z < a.pos[2] - 16;   // keep alive long enough to dissolve
     g.visible = act > 0.001 && present > 0.01 && !passed;
     if (!g.visible) return;
     const bob = Math.sin(clock.elapsedTime * 0.8 + index) * 0.11;
+    // the solid mascot hands over to the particle portrait as the camera passes
+    const ds = THREE.MathUtils.clamp((w - (a.focus + AGENT_HALF - 0.004)) / 0.03, 0, 1);
     // mascot: faint teaser when approaching (~0.2), full only when focused — all gated by act
-    const mo = act * present * (0.2 + 0.8 * f);
+    const mo = act * present * (0.2 + 0.8 * f) * (1 - ds);
     if (plane.current) {
       plane.current.position.y = bob;
       plane.current.scale.setScalar(a.scale * (1 + f * 0.05));
@@ -163,6 +411,7 @@ function AgentBody({ a, index, texture, progress }: { a: typeof AGENTS_WORLD[num
     }
     if (planeMat.current) planeMat.current.opacity = mo;
     if (glowMat.current) glowMat.current.opacity = mo * 0.13;   // ambient light, not a disc
+    if (poolMat.current) poolMat.current.opacity = act * (present * 0.05 + f * 0.09); // pool of light
     const fa = f * act;
     if (annot.current) annot.current.visible = fa > 0.05;
     if (quoteMat.current) quoteMat.current.opacity = fa;
@@ -179,6 +428,14 @@ function AgentBody({ a, index, texture, progress }: { a: typeof AGENTS_WORLD[num
 
   return (
     <group ref={grp} position={a.pos} visible={false}>
+      {/* far backdrop pool of light the agent stands in (atmosphere, behind everything) */}
+      <mesh position={[0, 0.1, -4]}>
+        <planeGeometry args={[a.scale * 6, a.scale * 6]} />
+        <meshBasicMaterial ref={poolMat} map={glowTexture()} color={a.color} transparent opacity={0}
+          depthWrite={false} toneMapped={false} blending={THREE.AdditiveBlending} />
+      </mesh>
+      {/* the agent quietly showing its work (behind the mascot) */}
+      <AgentWork agent={a} progress={progress} />
       {/* soft volumetric glow — a bloom halo (elongated + faint), no hard circular edge */}
       <mesh position={[0, 0.25, -0.5]}>
         <planeGeometry args={[a.scale * 2.9, a.scale * 3.9]} />
@@ -189,6 +446,8 @@ function AgentBody({ a, index, texture, progress }: { a: typeof AGENTS_WORLD[num
         <planeGeometry args={[1, 1.2]} />
         <meshBasicMaterial ref={planeMat} map={texture} transparent depthWrite={false} opacity={0} toneMapped={false} />
       </mesh>
+      {/* the agent as particles — takes over from the mascot as the camera passes */}
+      <AgentDissolve a={a} texture={texture} progress={progress} />
 
       {/* SECONDARY: one stacked component (quote → gap → name) + clean arrow from below it */}
       <group ref={annot}>
@@ -223,23 +482,35 @@ function WorldAgents({ progress }: { progress: Progress }) {
 
 // ── atmosphere: dim data-dust across the whole journey ──────────────────────────
 function Atmosphere() {
-  const N = 1200;
   const ref = useRef<THREE.Points>(null);
-  const geo = useMemo(() => {
-    const arr = new Float32Array(N * 3);
-    for (let i = 0; i < N; i++) {
-      arr[i * 3] = (Math.random() - 0.5) * 44;
-      arr[i * 3 + 1] = (Math.random() - 0.5) * 26;
-      arr[i * 3 + 2] = 8 - Math.random() * 330;
+  const ref2 = useRef<THREE.Points>(null);
+  const layer = (n: number, spread: number, deep: number) => {
+    const arr = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      arr[i * 3] = (Math.random() - 0.5) * spread;
+      arr[i * 3 + 1] = (Math.random() - 0.5) * (spread * 0.6);
+      arr[i * 3 + 2] = 8 - Math.random() * deep;
     }
     return arr;
-  }, []);
-  useFrame(({ clock }) => { if (ref.current) ref.current.rotation.z = Math.sin(clock.elapsedTime * 0.02) * 0.04; });
+  };
+  const near = useMemo(() => layer(1200, 44, 330), []);
+  const far = useMemo(() => layer(700, 70, 330), []);
+  useFrame(({ clock }) => {
+    const t = clock.elapsedTime;
+    if (ref.current) ref.current.rotation.z = Math.sin(t * 0.02) * 0.04;
+    if (ref2.current) ref2.current.rotation.z = Math.sin(t * 0.012) * 0.03;
+  });
   return (
-    <points ref={ref}>
-      <bufferGeometry><bufferAttribute attach="attributes-position" args={[geo, 3]} /></bufferGeometry>
-      <pointsMaterial color="#333c50" size={0.045} transparent opacity={0.45} sizeAttenuation depthWrite={false} fog />
-    </points>
+    <>
+      <points ref={ref}>
+        <bufferGeometry><bufferAttribute attach="attributes-position" args={[near, 3]} /></bufferGeometry>
+        <pointsMaterial color="#333c50" size={0.045} transparent opacity={0.45} sizeAttenuation depthWrite={false} fog />
+      </points>
+      <points ref={ref2}>
+        <bufferGeometry><bufferAttribute attach="attributes-position" args={[far, 3]} /></bufferGeometry>
+        <pointsMaterial color="#232b3c" size={0.03} transparent opacity={0.3} sizeAttenuation depthWrite={false} fog />
+      </points>
+    </>
   );
 }
 
@@ -493,6 +764,9 @@ export default function SpatialWorld({ progress }: { progress: Progress }) {
   useFrame(() => { if (root.current) root.current.visible = progress.current >= HERO_EXIT; });
   return (
     <group ref={root} visible={false}>
+      <Terrain progress={progress} />
+      <LightShaft />
+      <Burst progress={progress} />
       <Atmosphere />
       <WorldAgents progress={progress} />
       <Monuments items={MONUMENTS} progress={progress} />

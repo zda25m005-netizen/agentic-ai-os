@@ -15,6 +15,7 @@ import { EDGES, GRAPH_CENTER_Z, KIND_COLOR, NODES, NODE_INDEX } from "./graph";
 import { BAND } from "./timeline";
 import { BOUNDARY, NEURAL_GROUP_Z, sampleRail, toWorld } from "./world";
 import SpatialWorld from "./SpatialWorld";
+import IntroCloud from "./IntroCloud";
 
 type Progress = MutableRefObject<number>;
 type HoverCb = (id: string | null) => void;
@@ -349,6 +350,7 @@ export default function AgentWorld({ progress, onHover, debug }: { progress: Pro
       <pointLight position={[6, 6, 6]} intensity={45} color="#6EA8FF" />
       <pointLight position={[-6, -3, 2]} intensity={28} color="#8B7DF6" />
       <Stars radius={120} depth={80} count={2600} factor={3} saturation={0} fade speed={0.4} />
+      <IntroCloud progress={progress} />
       <Suspense fallback={null}><SpatialWorld progress={progress} /></Suspense>
       <Network progress={progress} onHover={onHover} />
       <Rig progress={progress} debug={debug} />

@@ -88,6 +88,9 @@ export interface AgentW {
   side: "left" | "right" | "center"; focus: number; quote: string; words: Cap[];
   face: V3; // local offset (from the mascot centre) to the mouth/visor — the arrow's endpoint
   arm?: [number, number, number, number]; // arrow control tuning [outReach, dip, backReach, backY]
+  work: "search" | "plan" | "run" | "cluster"; // the "showing work" motion around the agent
+  idx: string;  // technical index shown in the HUD, e.g. "001"
+  role: string; // small uppercase role line in the HUD
 }
 
 // Focus centers/half-widths come from the rail pacing. Each agent shows only THREE
@@ -98,7 +101,7 @@ export const AGENT_HALF = 0.028;
 export const AGENTS_WORLD: AgentW[] = [
   {
     id: "researcher", img: "/mascots/rory-3d-cut.webp", color: COL.researcher,
-    pos: [-3.2, 0.2, Z.researcher], scale: 2.6, side: "left", focus: 0.075, face: [0, 0.55, 0.3],
+    pos: [-3.2, 0.2, Z.researcher], scale: 2.6, side: "left", focus: 0.075, face: [0, 0.55, 0.3], work: "search", idx: "001", role: "RESEARCH & EVIDENCE",
     quote: "I disappear into the\nrabbit hole so you\ndon't have to.",
     words: [
       { t: "WEB", d: [-4.6, 2.7, -4.5], s: 0.7, o: 0.2, rot: [0, -0.05] },       // far upper-left
@@ -110,6 +113,7 @@ export const AGENTS_WORLD: AgentW[] = [
     id: "planner", img: "/mascots/peter-3d-cut.webp", color: COL.planner,
     pos: [3.6, 0.6, Z.planner], scale: 2.6, side: "right", focus: 0.19, face: [0, 0.6, 0.3],
     arm: [1.2, 0.6, 2.6, 1.1], // route above TASKS/ROUTES on the left
+    work: "plan", idx: "002", role: "PLANNING & DECOMPOSITION",
     quote: "I turn one messy goal\ninto work everyone\ncan execute.",
     words: [
       { t: "GOAL", d: [-4.8, 2.5, -3.5], s: 0.95, o: 0.32, rot: [0, 0.06] },
@@ -119,7 +123,7 @@ export const AGENTS_WORLD: AgentW[] = [
   },
   {
     id: "coder", img: "/mascots/ivy-3d-cut.webp", color: COL.coder,
-    pos: [-3.8, -0.7, Z.coder], scale: 2.6, side: "left", focus: 0.305, face: [0, 0.5, 0.3],
+    pos: [-3.8, -0.7, Z.coder], scale: 2.6, side: "left", focus: 0.305, face: [0, 0.5, 0.3], work: "run", idx: "003", role: "EXECUTION & REPAIR",
     quote: "I write it. I run it.\nI break it. I fix it.",
     words: [
       { t: "RUN", d: [3.6, 1.9, -2], s: 0.95, o: 0.34, rot: [0, 0.05] },
@@ -130,7 +134,7 @@ export const AGENTS_WORLD: AgentW[] = [
   },
   {
     id: "analyst", img: "/mascots/luna-3d-cut.webp", color: COL.analyst,
-    pos: [2.8, -0.4, Z.analyst], scale: 2.6, side: "right", focus: 0.41, face: [0.1, 0.55, 0.3],
+    pos: [2.8, -0.4, Z.analyst], scale: 2.6, side: "right", focus: 0.41, face: [0.1, 0.55, 0.3], work: "cluster", idx: "004", role: "ANALYSIS & INSIGHT",
     quote: "Give me messy data.\nI'll find the story.",
     words: [
       { t: "DATA", d: [-3.6, 1.9, -2], s: 0.95, o: 0.32, rot: [0, -0.05] },
@@ -150,7 +154,7 @@ export interface Mon {
 
 // PLAN as a transition monument (appears large just after the planner intro, then passes).
 export const MONUMENTS: Mon[] = [
-  { t: "PLAN", pos: [3.0, 3.2, Z.planner - 12], size: 6.5, color: "#4a5570", anchorX: "center", fadeFar: 70, win: [0.215, 0.02], rot: [0, 0.04] },
+  { t: "PLAN", pos: [3.0, 3.2, Z.planner - 12], size: 8.5, color: "#4a5570", anchorX: "center", fadeFar: 80, win: [0.215, 0.02], rot: [0, 0.04] },
 
   // floating-words region (team → collaborate): revealed one at a time, well spaced
   { t: "SEARCH", pos: [-9, 3.5, Z.team - 4], size: 3.2, color: COL.wordDim, fadeFar: 52, win: [0.485, 0.008] },
@@ -158,13 +162,13 @@ export const MONUMENTS: Mon[] = [
   { t: "ANALYZE", pos: [-7, -4, Z.collaborate + 14], size: 3.0, color: COL.wordDim, fadeFar: 52, win: [0.535, 0.008] },
 
   // THE giant — the only monumental word in its frame; camera weaves between letters
-  { t: "COLLABORATE", pos: [0, 0, Z.collaborate], size: 9.5, color: "#5a6478", anchorX: "center", fadeFar: 78, win: [0.568, 0.02] },
+  { t: "COLLABORATE", pos: [0, 0, Z.collaborate], size: 13.5, color: "#5a6478", anchorX: "center", fadeFar: 88, win: [0.568, 0.02] },
 
   // neural-world landmarks — one at a time as the camera moves inside, low + far
-  { t: "TOOLS", pos: [14, -6, Z.neural - 4], size: 6, color: COL.wordDim, fadeFar: 62, win: [0.665, 0.009] },
-  { t: "MEMORY", pos: [-16, 3, Z.neural - 12], size: 7, color: COL.wordDim, fadeFar: 66, win: [0.697, 0.009] },
-  { t: "PLANNING", pos: [0, 9, Z.neural - 18], size: 6, color: COL.wordDim, anchorX: "center", fadeFar: 66, win: [0.729, 0.009] },
-  { t: "EXECUTION", pos: [-6, -9, Z.neural - 8], size: 5, color: COL.wordDim, fadeFar: 60, win: [0.758, 0.009] },
+  { t: "TOOLS", pos: [14, -6, Z.neural - 4], size: 7.5, color: COL.wordDim, fadeFar: 68, win: [0.665, 0.009] },
+  { t: "MEMORY", pos: [-16, 3, Z.neural - 12], size: 8.5, color: COL.wordDim, fadeFar: 72, win: [0.697, 0.009] },
+  { t: "PLANNING", pos: [0, 9, Z.neural - 18], size: 7.5, color: COL.wordDim, anchorX: "center", fadeFar: 72, win: [0.729, 0.009] },
+  { t: "EXECUTION", pos: [-6, -9, Z.neural - 8], size: 6.5, color: COL.wordDim, fadeFar: 66, win: [0.758, 0.009] },
 ];
 
 // short cinematic phrases through the communication region — sparse, off-centre
@@ -206,10 +210,10 @@ export const ARTIFACT = { center: [0, 0, Z.artifact] as V3, label: "REPORT.PDF" 
 
 // ── final reveal — monumental, spread across the frame, readable at rest ─────────
 export const FINAL_WORDS: Mon[] = [
-  { t: "BEHIND EVERY", pos: [-15, 5, Z.final + 4], size: 3.0, color: "#c9d3e0", anchorX: "left", fadeFar: 120 },
-  { t: "CUTE AGENT", pos: [-15, 1.4, Z.final], size: 5.2, color: "#ffffff", anchorX: "left", fadeFar: 120 },
-  { t: "IS A", pos: [7, -1, Z.final - 4], size: 3.0, color: "#c9d3e0", anchorX: "left", fadeFar: 120 },
-  { t: "SERIOUS RUNTIME.", pos: [3, -4.6, Z.final - 6], size: 5.0, color: COL.accent, anchorX: "left", fadeFar: 120 },
+  { t: "BEHIND EVERY", pos: [-16, 5.4, Z.final + 4], size: 3.4, color: "#c9d3e0", anchorX: "left", fadeFar: 130 },
+  { t: "CUTE AGENT", pos: [-16, 1.4, Z.final], size: 6.6, color: "#ffffff", anchorX: "left", fadeFar: 130 },
+  { t: "IS A", pos: [7, -1, Z.final - 4], size: 3.4, color: "#c9d3e0", anchorX: "left", fadeFar: 130 },
+  { t: "SERIOUS RUNTIME.", pos: [2.5, -5, Z.final - 6], size: 6.2, color: COL.accent, anchorX: "left", fadeFar: 130 },
 ];
 
 export const LINKS: { from: string; to: V3; label: string; color: string }[] = [
@@ -281,6 +285,16 @@ export function sampleRail(w: number, outPos: THREE.Vector3, outLook: THREE.Vect
     a.look[1] + (b.look[1] - a.look[1]) * e,
     a.look[2] + (b.look[2] - a.look[2]) * e,
   );
+}
+
+// the agent currently owning the frame (drives the technical HUD index + role line).
+export function focusedAgent(w: number): { idx: string; role: string; f: number } | null {
+  let best: AgentW | null = null, bf = 0;
+  for (const a of AGENTS_WORLD) {
+    const f = focusW(w, a.focus, AGENT_HALF, 0.035);
+    if (f > bf) { bf = f; best = a; }
+  }
+  return best && bf > 0.02 ? { idx: best.idx, role: best.role, f: bf } : null;
 }
 
 // which region owns the frame at world progress w (for the composition debug HUD).

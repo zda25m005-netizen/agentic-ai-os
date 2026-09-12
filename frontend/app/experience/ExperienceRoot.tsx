@@ -12,7 +12,7 @@ import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import { ADJ, NODES, NODE_INDEX } from "./graph";
 import { BAND, TOTAL_VH, activeScene, local, vis } from "./timeline";
-import { BOUNDARY, regionAt, toWorld } from "./world";
+import { BOUNDARY, focusedAgent, regionAt, toWorld, worldActivation } from "./world";
 import type { DebugInfo } from "./AgentWorld";
 
 const AgentWorld = dynamic(() => import("./AgentWorld"), { ssr: false });
@@ -33,6 +33,7 @@ export default function ExperienceRoot() {
   const [debug, setDebug] = useState(false);
   const [debugComp, setDebugComp] = useState(false);
   const [hover, setHover] = useState<string | null>(null);
+  const introRef = useRef<HTMLDivElement>(null);
   const heroRef = useRef<HTMLDivElement>(null);
   const t0Ref = useRef<HTMLDivElement>(null);
   const ctaRef = useRef<HTMLDivElement>(null);
@@ -40,6 +41,10 @@ export default function ExperienceRoot() {
   const inspector = useRef<HTMLDivElement>(null);
   const debugRef = useRef<HTMLDivElement>(null);
   const compRef = useRef<HTMLDivElement>(null);
+  const atmosRef = useRef<HTMLDivElement>(null);
+  const hudRef = useRef<HTMLDivElement>(null);
+  const hudIdxRef = useRef<HTMLSpanElement>(null);
+  const hudRoleRef = useRef<HTMLSpanElement>(null);
   const dbg = useRef<DebugInfo>({ camZ: 0, mascots: {}, active: "hero" });
   const mouse = useRef({ x: 0, y: 0 });
 
@@ -47,11 +52,20 @@ export default function ExperienceRoot() {
     const p = progress.current;
     const w = toWorld(p);
 
-    // hero — full until 55% of its band, then recede in depth + fade out (unchanged)
+    // intro — the floating particle cloud moment, before the hero
+    if (introRef.current) {
+      const lp = local(p, BAND.intro);
+      const op = 1 - smooth(clamp01((lp - 0.55) / 0.45));
+      const el = introRef.current;
+      el.style.opacity = String(op);
+      el.style.visibility = op < 0.02 ? "hidden" : "visible";
+      el.style.transform = `translateY(${-(1 - op) * 40}px)`;
+    }
+    // hero — fades in as the intro clears, then full until 55% of its band (unchanged after that)
     if (heroRef.current) {
       const lp = local(p, BAND.hero);
       const out = smooth(clamp01((lp - 0.55) / 0.45));
-      const op = 1 - out;
+      const op = smooth(clamp01(lp / 0.18)) * (1 - out);
       const el = heroRef.current;
       el.style.opacity = String(op);
       el.style.visibility = op < 0.02 ? "hidden" : "visible";
@@ -70,6 +84,17 @@ export default function ExperienceRoot() {
       const o = bump(w, 0.948, 0.969, 0.3);
       approvalRef.current.style.opacity = String(o);
       approvalRef.current.style.pointerEvents = o > 0.6 ? "auto" : "none";
+    }
+    // atmosphere vignette + "+" registration grid — appear only once the hero has left
+    if (atmosRef.current) atmosRef.current.style.opacity = String(worldActivation(p));
+    // technical HUD — index + role of whichever agent owns the frame
+    if (hudRef.current) {
+      const fa = focusedAgent(w);
+      hudRef.current.style.opacity = String(fa ? fa.f * worldActivation(p) : 0);
+      if (fa) {
+        if (hudIdxRef.current) hudIdxRef.current.textContent = `[[  ${fa.idx}  ]]`;
+        if (hudRoleRef.current) hudRoleRef.current.textContent = fa.role;
+      }
     }
     // final CTA — only after all the spatial storytelling
     if (ctaRef.current) {
@@ -143,12 +168,41 @@ export default function ExperienceRoot() {
     <div className={`xp ${ready ? "xp-ready" : ""}`}>
       {!reduced && <div className="xp-canvas-layer" aria-hidden="true"><AgentWorld progress={progress} onHover={setHover} debug={dbg} /></div>}
 
+      {/* full-bleed atmosphere: cinematic vignette + faint "+" registration grid (post-hero) */}
+      {!reduced && (
+        <div className="xp-atmos" ref={atmosRef} style={{ opacity: 0 }} aria-hidden="true">
+          <div className="xp-atmos-vignette" />
+          <div className="xp-plusgrid">
+            {[[10, 56], [30, 56], [50, 56], [70, 56], [90, 56], [6, 12], [94, 12], [6, 90], [94, 90]].map(([x, y], i) => (
+              <span key={i} style={{ left: `${x}%`, top: `${y}%` }}>+</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* technical HUD framing — index, tick rulers, role of the focused agent */}
+      {!reduced && (
+        <div className="xp-hud" ref={hudRef} style={{ opacity: 0 }} aria-hidden="true">
+          <span className="xp-hud-idx" ref={hudIdxRef}>[[  001  ]]</span>
+          <div className="xp-hud-ticks xp-hud-ticks-top" />
+          <div className="xp-hud-ticks xp-hud-ticks-bottom" />
+          <div className="xp-hud-role"><i /><span ref={hudRoleRef} /></div>
+        </div>
+      )}
+
       <div className="xp-top">
         <span className="xp-online"><i />AGENT_01 ONLINE</span>
         <Link href="/os" className="xp-enter-mini">Enter the OS →</Link>
       </div>
 
       <div className="xp-stage">
+        {/* INTRO — floating particle cloud moment, before the hero */}
+        <div className="xp-introlayer" ref={introRef} style={{ opacity: 1 }}>
+          <span className="xp-kicker-intro">THEY THINK · THEY ACT · THEY REPORT BACK</span>
+          <h1 className="xp-wordmark">AUTONOMY</h1>
+          <span className="xp-scrollexplore">SCROLL TO EXPLORE</span>
+        </div>
+
         {/* HERO — clean, nothing else in the viewport (untouched) */}
         <div className="xp-layer" ref={heroRef} style={{ opacity: 1 }}>
           <h1 className="xp-headline"><span>BUILD AGENTS.</span><span>GIVE THEM TOOLS.</span><span>LET THEM WORK.</span></h1>
